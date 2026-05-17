@@ -1,6 +1,8 @@
 var Websocket = require('ws');
 var wserver;
+var wsEnabled = process.env.WEBSOCKET_ENABLED !== 'false';
 var broadCastMsg = function (msg, author, self) {
+    if (!wsEnabled) return;
     //console.log(`in broadcast ${msg}`);
     wserver.clients.forEach(e => {
         if (Object.is(e, self)) {
@@ -19,6 +21,10 @@ var broadCastMsg = function (msg, author, self) {
 }
 exports.broadCastMsg=broadCastMsg;
 exports.startWebSocketServer = function (server) {
+    if (!wsEnabled) {
+        console.log('WebSocket disabled (WEBSOCKET_ENABLED=false)');
+        return;
+    }
     var connections = {}
     wserver = new Websocket.Server({
         verifyClient: false,

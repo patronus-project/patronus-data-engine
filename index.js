@@ -1,3 +1,5 @@
+require('dotenv').config();
+var path = require('path');
 var express = require('express');
 var http = require('http');
 var bodyParser = require('body-parser');
@@ -5,42 +7,58 @@ var bodyParser = require('body-parser');
 app = express();
 var keymapper =  require('./data.json');
 // var appSecure = https.createServer(ssl.getSSLOptions());
-port = process.env.PORT || 80;
+port = process.env.PORT;
 // sslport = process.env.SSLPORT || 3443;
 const wsocketserver= require('./websocketserver');
-console.log(`in ${port}`);
+const obd2Persistence = require('./persistence/obd2Persistence');
+console.log(`listening on port ${port}`);
 
 var server = http.createServer(app).listen(port);
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-app.use(function (req, res, next) {
+function allowAll(req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization ");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
     res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-    if ('OPTIONS' === req.method) {
-        //respond with 200
-        res.sendStatus(200);
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
     }
-    else { next(); }
-});
-    app.route('/keys')
-        .get(function(req,res){
+    next();
+}
+
+    app.route('/api/keys')
+        .get(allowAll, function(req,res){
             res.status(200)
             res.json(keymapper)
         })
-    app.route('/obd2')
-        .get(function (req, res) {
+    app.route('/api/obd2')
+        .get(allowAll, function (req, res) {
             console.log(`broadcast at ${new Date()}`)
             const author = 'OBD'
             const msg = JSON.stringify(req.query);
+            // console.log(req.headers)
             wsocketserver.broadCastMsg(msg,author)
+            obd2Persistence.persistObd2Query(req.query, req.headers['user-agent']).catch(function (err) {
+                console.log('obd2 persistence failed', err.message || err);
+            });
             res.status(200);
             res.send('OK!');
         });
-    app.route('/obd2sim')
+    app.route('/api/obd2/history')
         .get(function (req, res) {
+            obd2Persistence.findObd2Events({ limit: 100 })
+                .then(function (records) {
+                    res.status(200).json(records);
+                })
+                .catch(function (err) {
+                    console.log('history fetch failed', err.message || err);
+                    res.status(500).json({ error: err.message });
+                });
+        });
+    app.route('/api/obd2sim')
+        .get(allowAll, function (req, res) {
             console.log(`simbroadcast at ${new Date()}`)
             const author = 'OBD'
             const msq = {sim: true, ...req.query}
@@ -51,6 +69,16 @@ app.use(function (req, res, next) {
         });
 
 wsocketserver.startWebSocketServer(server);
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('*', function (req, res) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+const { connect } = require('./persistence/mongoose');
+connect()
+    .then(function () { console.log('MongoDB connected OK'); })
+    .catch(function (err) { console.error('MongoDB connection FAILED:', err.message); });
 
 
 
