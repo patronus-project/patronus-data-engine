@@ -46,6 +46,15 @@ function allowAll(req, res, next) {
             res.status(200);
             res.send('OK!');
         });
+    // Paged detail for replay sliding window — must be before /api/obd2/history
+    app.route('/api/obd2/history/paged')
+        .get(function (req, res) {
+            const { start, end, offset, limit } = req.query;
+            obd2Persistence.findObd2EventsPaged({ start, end, offset, limit })
+                .then(function (result) { res.status(200).json(result); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
     app.route('/api/obd2/history')
         .get(function (req, res) {
             obd2Persistence.findObd2Events({ limit: 100 })
@@ -56,6 +65,16 @@ function allowAll(req, res, next) {
                     console.log('history fetch failed', err.message || err);
                     res.status(500).json({ error: err.message });
                 });
+        });
+
+    app.route('/api/trips')
+        .get(function (req, res) {
+            const { start, end } = req.query;
+            const resolvedEnd   = end   || new Date().toISOString();
+            const resolvedStart = start || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            obd2Persistence.findTrips({ start: resolvedStart, end: resolvedEnd })
+                .then(function (trips) { res.status(200).json(trips); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
     app.route('/api/obd2sim')
         .get(allowAll, function (req, res) {
