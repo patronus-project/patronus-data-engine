@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.claude\" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "Bash(find \"/c/Users/sahil/AppData/Roaming/Code - Insiders/User\" -name \"settings.json\" 2>/dev/null | head -5; find \"/c/Users/sahil/.vscode-insiders\" -name \"settings.json\" 2>/dev/null | head -5)",
+      "Read(//c/Users/sahil/AppData/Roaming/Code - Insiders/User/**)",
+      "Read(//c/Users/sahil/.vscode-insiders/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(node -e ' *)",
+      "Read(//c/Users/sahil/AppData/Roaming/Code - Insiders/**)",
+      "Bash(xargs grep -l \"mongodb\\\\|mongo\\\\|mcp\")",
+      "Bash(xargs grep -l \"mcp\\\\|mongodb\\\\|mongo\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

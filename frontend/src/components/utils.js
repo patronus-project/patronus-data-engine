@@ -1,3 +1,16 @@
+// Takes oldest-first records, returns lat/lng path points (every 10th or fewer)
+export function getPathPoints(records) {
+  const step = Math.max(1, Math.floor(records.length / 150))
+  const points = []
+  for (let i = 0; i < records.length; i += step) {
+    const kpiMap = extractKpiMap(records[i])
+    const lat = parseFloat(kpiMap['kff1006'])
+    const lng = parseFloat(kpiMap['kff1005'])
+    if (!isNaN(lat) && !isNaN(lng)) points.push([lat, lng])
+  }
+  return points
+}
+
 export function extractKpiMap(record) {
   const map = {}
   if (!record.kpis) return map

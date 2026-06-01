@@ -7,7 +7,7 @@ function fmt(date) {
   return date ? date.toLocaleTimeString() : '—'
 }
 
-export default function LandingPage({ history, keyMap, onSelectKpi, onRefresh, lastRefresh, lastData }) {
+export default function LandingPage({ history, keyMap, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
   const breadcrumb = getBreadcrumb(history)
 
@@ -23,6 +23,7 @@ export default function LandingPage({ history, keyMap, onSelectKpi, onRefresh, l
         <div className="ts-bar">
           <span>Refreshed: {fmt(lastRefresh)}</span>
           <span>Last data: {fmt(lastData)}</span>
+          <button className="header-action-btn" onClick={onReplay}>⏮ Replay</button>
         </div>
       </div>
       <div className="landing">

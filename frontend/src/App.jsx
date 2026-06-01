@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import LandingPage from './components/LandingPage'
 import KpiDetail from './components/KpiDetail'
+import ReplayPage from './components/ReplayPage'
 import './App.css'
 
 export default function App() {
   const [history, setHistory] = useState([])
   const [keyMap, setKeyMap] = useState({})
   const [selectedKpi, setSelectedKpi] = useState(null)
+  const [view, setView] = useState('live') // 'live' | 'replay'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
@@ -35,6 +37,10 @@ export default function App() {
   if (loading) return <div className="state-msg">Loading...</div>
   if (error) return <div className="state-msg error">Error: {error}</div>
 
+  if (view === 'replay') {
+    return <ReplayPage history={history} keyMap={keyMap} onExit={() => setView('live')} />
+  }
+
   if (selectedKpi) {
     return (
       <KpiDetail
@@ -49,5 +55,5 @@ export default function App() {
 
   const lastData = history.length > 0 ? new Date(history[0].receivedAt) : null
 
-  return <LandingPage history={history} keyMap={keyMap} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastRefresh={lastRefresh} lastData={lastData} />
+  return <LandingPage history={history} keyMap={keyMap} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastRefresh={lastRefresh} lastData={lastData} onReplay={() => setView('replay')} />
 }
