@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind } from 'lucide-react'
+import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind, CircleHelp } from 'lucide-react'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
@@ -60,11 +60,11 @@ function ProfileModal({ profileData, onClose }) {
   )
 }
 
-const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors']
-const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors' }
-const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/> }
+const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc']
+const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown' }
+const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/> }
 
-export default function LandingPage({ history, keyMap, tabMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
   const breadcrumb = getBreadcrumb(history)
   const heading = history.length > 0 ? parseFloat(extractKpiMap(history[0])['kff1007']) || 0 : 0
@@ -110,13 +110,13 @@ export default function LandingPage({ history, keyMap, tabMap, kpiMeta, profileD
                   ))}
                 </div>
                 <div className="kpi-grid-area">
-                  {topKpis.filter(({ key }) => tabMap[key] === activeTab).length === 0 ? (
+                  {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).length === 0 ? (
                     <p className="no-data">No {TAB_LABELS[activeTab]} data in current session.</p>
                   ) : (
                     <div className="kpi-grid">
-                      {topKpis.filter(({ key }) => tabMap[key] === activeTab).map(({ key, value }) => (
+                      {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
                         <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)}
-                                 value={value} unit={getKpiUnit(key, kpiMeta)} onClick={() => onSelectKpi(key)} />
+                                 value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} onClick={() => onSelectKpi(key)} />
                       ))}
                     </div>
                   )}

@@ -1,3 +1,25 @@
+// ── Unit parser registry ───────────────────────────────────────────────────
+// Each entry: unitString → (rawValue: string) => { value: string, unit: string }
+// parseUnit() calls the mapped parser or returns the raw value unchanged.
+
+const UNIT_PARSERS = {
+  // Torque Pro encodes G-force as integer*100 (100 = 1.00 G)
+  'G': raw => {
+    const n = parseFloat(raw)
+    return isNaN(n)
+      ? { value: raw,               unit: 'G' }
+      : { value: (n / 100).toFixed(3), unit: 'G' }
+  },
+}
+
+export function parseUnit(unit, rawValue) {
+  if (!unit) return { value: rawValue, unit: '' }
+  const parser = UNIT_PARSERS[unit]
+  if (!parser) return { value: rawValue, unit }
+  return parser(rawValue)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 const META_PREFIXES = ['defaultUnit', 'userUnit', 'userShortName', 'userFullName', 'profile']
 
 function isMetaKey(key) {
@@ -71,12 +93,11 @@ export function getKpiMeta(history) {
 }
 
 // Returns the unit string to display for a given data key (e.g. 'kff1221')
-// Prefers userUnit over defaultUnit
-export function getKpiUnit(kpiKey, kpiMeta) {
-  if (!kpiMeta) return ''
+// Priority: userUnit (from OBD device) > defaultUnit (from OBD device) > staticUnitMap (from data.json)
+export function getKpiUnit(kpiKey, kpiMeta, staticUnitMap) {
   const id = sensorId(kpiKey)
-  const unit = firstOf(kpiMeta.userUnits[id]) ?? firstOf(kpiMeta.defaultUnits[id]) ?? ''
-  return unit
+  const dynamic = kpiMeta ? (firstOf(kpiMeta.userUnits[id]) ?? firstOf(kpiMeta.defaultUnits[id])) : null
+  return dynamic ?? staticUnitMap?.[kpiKey] ?? ''
 }
 
 // Returns display label: prefers userShortName > userFullName > keyMap > key

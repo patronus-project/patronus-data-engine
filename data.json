@@ -255,6 +255,18 @@
   "tab": "fuel"
  },
  {
+  "id": "k70",
+  "DeviceID": "GPS Altitude ALT",
+  "unit": "m",
+  "tab": "gps"
+ },
+ {
+  "id": "k73",
+  "DeviceID": "Exhaust Pressure",
+  "unit": "kPa",
+  "tab": "engine"
+ },
+ {
   "id": "k78",
   "DeviceID": "Exhaust Gas Temperature 1",
   "tab": "engine"
@@ -487,6 +499,36 @@
  {
   "id": "kff1239",
   "DeviceID": "GPS Accuracy",
+  "tab": "gps"
+ },
+ {
+  "id": "kff129a",
+  "DeviceID": "Device Battery Level",
+  "unit": "%",
+  "tab": "gps"
+ },
+ {
+  "id": "kff12a4",
+  "DeviceID": "G-Force X (Lateral)",
+  "unit": "G",
+  "tab": "gps"
+ },
+ {
+  "id": "kff12a5",
+  "DeviceID": "G-Force Y (Vertical / Gravity)",
+  "unit": "G",
+  "tab": "gps"
+ },
+ {
+  "id": "kff12a6",
+  "DeviceID": "G-Force Z (Accel/Brake)",
+  "unit": "G",
+  "tab": "gps"
+ },
+ {
+  "id": "kff12ab",
+  "DeviceID": "G-Force Total (Vector Sum)",
+  "unit": "G",
   "tab": "gps"
  },
  {
