@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio, CircleHelp } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
-import { extractKpiMap, getPathPoints, getKpiLabel, getKpiUnit } from './utils'
+import { extractKpiMap, getPathPoints, getKpiLabel, getKpiUnit, getAlertLevel } from './utils'
 import KpiHero from './KpiHero'
 import InfoModal from './InfoModal'
 import TripSelector from './TripSelector'
@@ -15,7 +15,7 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc']
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/> }
 
-export default function ReplayPage({ keyMap, tabMap, staticUnitMap, kpiMeta, profileData, onExit }) {
+export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onExit }) {
   const [mode, setMode] = useState('trips')
   const [modal, setModal] = useState(null) // null | 'names' | 'profile'
 
@@ -175,7 +175,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, kpiMeta, pro
                       ) : (
                         <div className="kpi-grid">
                           {currentKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
-                            <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} />
+                            <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} alert={getAlertLevel(key, value, alertMap)} />
                           ))}
                         </div>
                       )}

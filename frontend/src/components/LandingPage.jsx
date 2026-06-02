@@ -3,7 +3,7 @@ import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind,
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
-import { getTopKpis, getBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap } from './utils'
+import { getTopKpis, getBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel } from './utils'
 import KpiHero from './KpiHero'
 
 function fmt(date) {
@@ -64,7 +64,7 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc']
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/> }
 
-export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
   const breadcrumb = getBreadcrumb(history)
   const heading = history.length > 0 ? parseFloat(extractKpiMap(history[0])['kff1007']) || 0 : 0
@@ -116,7 +116,8 @@ export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, kp
                     <div className="kpi-grid">
                       {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
                         <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)}
-                                 value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} onClick={() => onSelectKpi(key)} />
+                                 value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)}
+                                 alert={getAlertLevel(key, value, alertMap)} onClick={() => onSelectKpi(key)} />
                       ))}
                     </div>
                   )}

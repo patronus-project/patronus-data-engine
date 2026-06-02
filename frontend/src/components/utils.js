@@ -12,6 +12,23 @@ const UNIT_PARSERS = {
   },
 }
 
+// Returns 'red' | 'amber' | null based on alertMap config for a KPI key
+export function getAlertLevel(kpiKey, rawValue, alertMap) {
+  const cfg = alertMap?.[kpiKey]
+  if (!cfg) return null
+  const v = parseFloat(rawValue)
+  if (isNaN(v)) return null
+  const gte = cfg.dir !== 'lte'
+  if (gte) {
+    if (v >= cfg.red)   return 'red'
+    if (v >= cfg.amber) return 'amber'
+  } else {
+    if (v <= cfg.red)   return 'red'
+    if (v <= cfg.amber) return 'amber'
+  }
+  return null
+}
+
 export function parseUnit(unit, rawValue) {
   if (!unit) return { value: rawValue, unit: '' }
   const parser = UNIT_PARSERS[unit]

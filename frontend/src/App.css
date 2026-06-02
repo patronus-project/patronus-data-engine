@@ -202,6 +202,11 @@
   transition: box-shadow 0.2s, transform 0.15s;
   text-align: left;
 }
+.kpi-alert-amber { border-color: #f59e0b; background: #fffbeb; }
+.kpi-alert-amber .kpi-value { color: #b45309; }
+.kpi-alert-red   { border-color: #ef4444; background: #fef2f2; }
+.kpi-alert-red   .kpi-value { color: #b91c1c; }
+
 .kpi-card:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   transform: translateY(-2px);

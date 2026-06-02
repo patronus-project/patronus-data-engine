@@ -89,8 +89,9 @@ function allowAll(req, res, next) {
 
 wsocketserver.startWebSocketServer(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: '1y', immutable: true }));
 app.get('*', function (req, res) {
+    res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

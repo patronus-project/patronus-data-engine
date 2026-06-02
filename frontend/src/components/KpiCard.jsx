@@ -1,8 +1,8 @@
 import FormattedValue from './FormattedValue'
 
-export default function KpiCard({ kpiKey, label, value, unit, onClick }) {
+export default function KpiCard({ kpiKey, label, value, unit, onClick, alert }) {
   return (
-    <div className="kpi-card" onClick={onClick} title={kpiKey}>
+    <div className={`kpi-card${alert ? ` kpi-alert-${alert}` : ''}`} onClick={onClick} title={kpiKey}>
       <div className="kpi-label">{label}</div>
       <div className="kpi-value"><FormattedValue value={value} unit={unit} /></div>
     </div>

@@ -127,7 +127,12 @@
  {
   "id": "k2f",
   "DeviceID": "Fuel Level (From Engine ECU)",
-  "tab": "fuel"
+  "tab": "fuel",
+  "alerts": {
+   "amber": 20,
+   "red": 10,
+   "dir": "lte"
+  }
  },
  {
   "id": "k3",
@@ -177,7 +182,12 @@
  {
   "id": "k4",
   "DeviceID": "Engine Load",
-  "tab": "engine"
+  "tab": "engine",
+  "alerts": {
+   "amber": 80,
+   "red": 95,
+   "dir": "gte"
+  }
  },
  {
   "id": "k42",
@@ -227,7 +237,12 @@
  {
   "id": "k5",
   "DeviceID": "Engine Coolant Temperature",
-  "tab": "engine"
+  "tab": "engine",
+  "alerts": {
+   "amber": 95,
+   "red": 100,
+   "dir": "gte"
+  }
  },
  {
   "id": "k52",
@@ -242,7 +257,12 @@
  {
   "id": "k5c",
   "DeviceID": "Engine Oil Temperature",
-  "tab": "engine"
+  "tab": "engine",
+  "alerts": {
+   "amber": 100,
+   "red": 120,
+   "dir": "gte"
+  }
  },
  {
   "id": "k6",
@@ -304,12 +324,22 @@
  {
   "id": "kc",
   "DeviceID": "Engine RPM",
-  "tab": "engine"
+  "tab": "engine",
+  "alerts": {
+   "amber": 3001,
+   "red": 5001,
+   "dir": "gte"
+  }
  },
  {
   "id": "kd",
   "DeviceID": "Speed (OBD)",
-  "tab": "engine"
+  "tab": "engine",
+  "alerts": {
+   "amber": 81,
+   "red": 101,
+   "dir": "gte"
+  }
  },
  {
   "id": "ke",
@@ -505,7 +535,12 @@
   "id": "kff129a",
   "DeviceID": "Device Battery Level",
   "unit": "%",
-  "tab": "gps"
+  "tab": "gps",
+  "alerts": {
+   "amber": 30,
+   "red": 15,
+   "dir": "lte"
+  }
  },
  {
   "id": "kff12a4",
@@ -694,7 +729,12 @@
  {
   "id": "kff126a",
   "DeviceID": "Distance to empty (Estimated)",
-  "tab": "fuel"
+  "tab": "fuel",
+  "alerts": {
+   "amber": 400,
+   "red": 200,
+   "dir": "lte"
+  }
  },
  {
   "id": "kff126b",
