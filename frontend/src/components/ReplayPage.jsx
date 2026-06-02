@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
+import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
 import { extractKpiMap, getPathPoints, getKpiLabel, getKpiUnit } from './utils'
+import KpiHero from './KpiHero'
 import InfoModal from './InfoModal'
 import TripSelector from './TripSelector'
 import ReplayHeader from './ReplayHeader'
@@ -9,7 +11,11 @@ import ReplayControls from './ReplayControls'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 
-export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
+const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors']
+const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors' }
+const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/> }
+
+export default function ReplayPage({ keyMap, tabMap, kpiMeta, profileData, onExit }) {
   const [mode, setMode] = useState('trips')
   const [modal, setModal] = useState(null) // null | 'names' | 'profile'
 
@@ -38,10 +44,15 @@ export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
     currentRecord, play, pause, seek, setSpeed,
   } = useReplayStream(source)
 
-  const currentKpis = useMemo(() => {
-    if (!currentRecord) return []
-    return Object.entries(extractKpiMap(currentRecord)).map(([key, value]) => ({ key, value }))
-  }, [currentRecord])
+  const currentKpiMap = useMemo(() => currentRecord ? extractKpiMap(currentRecord) : {}, [currentRecord])
+
+  const currentKpis = useMemo(
+    () => Object.entries(currentKpiMap).map(([key, value]) => ({ key, value })),
+    [currentKpiMap]
+  )
+
+  const heading = useMemo(() => parseFloat(currentKpiMap['kff1007']) || 0, [currentKpiMap])
+  const [activeTab, setActiveTab] = useState('fuel')
 
   const mapPoints = useMemo(() => {
     if (records.length === 0) return []
@@ -99,9 +110,9 @@ export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
       <div className="app-header">
         <span>Patronus — Replay</span>
         <div className="ts-bar">
-          <button className="header-action-btn" onClick={() => setModal('names')}>Units &amp; Names</button>
-          <button className="header-action-btn" onClick={() => setModal('profile')}>Profile</button>
-          <button className="header-action-btn" onClick={onExit}>← Live</button>
+          <button className="header-action-btn" disabled title="Units &amp; Names"><BookOpen size={15} /></button>
+          <button className="header-action-btn" disabled title="Vehicle Profile"><Car size={15} /></button>
+          <button className="header-action-btn" onClick={onExit} title="Back to Live"><Radio size={15} /></button>
         </div>
       </div>
 
@@ -139,7 +150,7 @@ export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
           />
           <div className="landing">
             <div className="map-section">
-              <MapView points={mapPoints} />
+              <MapView points={mapPoints} heading={heading} />
             </div>
             <div className="kpi-section">
               {currentKpis.length === 0 ? (
@@ -147,11 +158,30 @@ export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
                   {buffering && records.length === 0 ? 'Loading records…' : 'No KPI data for this frame.'}
                 </p>
               ) : (
-                <div className="kpi-grid">
-                  {currentKpis.map(({ key, value }) => (
-                    <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta)} />
-                  ))}
-                </div>
+                <>
+                  <div className="kpi-hero-pad"><KpiHero kvm={currentKpiMap} /></div>
+                  <div className="kpi-body">
+                    <div className="kpi-tab-bar">
+                      {TABS.map(t => (
+                        <button key={t} className={`kpi-tab-item${activeTab === t ? ' active' : ''}`}
+                                data-tab={t} data-label={TAB_LABELS[t]} onClick={() => setActiveTab(t)}>
+                          {TAB_ICONS[t]}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="kpi-grid-area">
+                      {currentKpis.filter(({ key }) => tabMap[key] === activeTab).length === 0 ? (
+                        <p className="no-data">No {TAB_LABELS[activeTab]} data for this frame.</p>
+                      ) : (
+                        <div className="kpi-grid">
+                          {currentKpis.filter(({ key }) => tabMap[key] === activeTab).map(({ key, value }) => (
+                            <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta)} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
