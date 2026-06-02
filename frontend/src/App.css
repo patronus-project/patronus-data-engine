@@ -446,3 +446,133 @@
   font-style: italic;
   font-size: 1rem;
 }
+
+/* ── KPI unit suffix ── */
+.kpi-unit {
+  font-size: 0.75em;
+  font-weight: 400;
+  color: #888;
+  margin-left: 2px;
+}
+
+/* ── Info Modals ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 10px;
+  width: min(760px, 92vw);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  letter-spacing: 0.3px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #999;
+  padding: 2px 7px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.modal-close:hover { background: #f0f0f0; color: #333; }
+
+.modal-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 0;
+}
+
+.modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.modal-table thead th {
+  text-align: left;
+  padding: 9px 14px;
+  background: #f7f7f9;
+  border-bottom: 2px solid #e4e4e8;
+  color: #555;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.modal-table td {
+  padding: 7px 14px;
+  border-bottom: 1px solid #f0f0f2;
+  vertical-align: middle;
+  color: #333;
+}
+
+.modal-table tr:last-child td { border-bottom: none; }
+.modal-table tbody tr:hover td { background: #fafafa; }
+
+.modal-mono {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #5c6bc0;
+}
+
+/* ── Profile facet grid ── */
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.profile-facet {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f5f6fa;
+  border: 1px solid #e4e6f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.profile-facet-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8891b0;
+}
+
+.profile-facet-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  word-break: break-all;
+}

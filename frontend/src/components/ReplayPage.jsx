@@ -1,15 +1,17 @@
 import { useState, useMemo } from 'react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
-import { extractKpiMap, getPathPoints } from './utils'
+import { extractKpiMap, getPathPoints, getKpiLabel, getKpiUnit } from './utils'
+import InfoModal from './InfoModal'
 import TripSelector from './TripSelector'
 import ReplayHeader from './ReplayHeader'
 import ReplayControls from './ReplayControls'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 
-export default function ReplayPage({ keyMap, onExit }) {
+export default function ReplayPage({ keyMap, kpiMeta, profileData, onExit }) {
   const [mode, setMode] = useState('trips')
+  const [modal, setModal] = useState(null) // null | 'names' | 'profile'
 
   // Trips mode state
   const { trips, loading: tripsLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useTrips()
@@ -85,11 +87,22 @@ export default function ReplayPage({ keyMap, onExit }) {
     return null
   }, [mode, selectedTrip, activeCustom, total])
 
+  const ids = useMemo(() => [...new Set([
+    ...Object.keys(kpiMeta.shortNames),
+    ...Object.keys(kpiMeta.fullNames),
+    ...Object.keys(kpiMeta.userUnits),
+    ...Object.keys(kpiMeta.defaultUnits),
+  ])].sort(), [kpiMeta])
+
   return (
     <div className="page-wrapper">
       <div className="app-header">
         <span>Patronus — Replay</span>
-        <button className="header-action-btn" onClick={onExit}>← Live</button>
+        <div className="ts-bar">
+          <button className="header-action-btn" onClick={() => setModal('names')}>Units &amp; Names</button>
+          <button className="header-action-btn" onClick={() => setModal('profile')}>Profile</button>
+          <button className="header-action-btn" onClick={onExit}>← Live</button>
+        </div>
       </div>
 
       <TripSelector
@@ -136,7 +149,7 @@ export default function ReplayPage({ keyMap, onExit }) {
               ) : (
                 <div className="kpi-grid">
                   {currentKpis.map(({ key, value }) => (
-                    <KpiCard key={key} kpiKey={key} label={keyMap[key] || key} value={value} />
+                    <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta)} />
                   ))}
                 </div>
               )}
@@ -147,6 +160,43 @@ export default function ReplayPage({ keyMap, onExit }) {
         <div className="replay-empty">
           <p>{mode === 'trips' ? 'Select a trip above to begin replay.' : 'Set a time range and click Load.'}</p>
         </div>
+      )}
+
+      {modal === 'names' && (
+        <InfoModal title="Units & Names" onClose={() => setModal(null)}>
+          <table className="modal-table">
+            <thead>
+              <tr><th>Sensor</th><th>Short Name</th><th>Full Name</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+              {ids.map(id => {
+                const short = kpiMeta.shortNames[id]
+                const full = kpiMeta.fullNames[id]
+                const unit = kpiMeta.userUnits[id] ?? kpiMeta.defaultUnits[id] ?? ''
+                return (
+                  <tr key={id}>
+                    <td className="modal-mono">{id}</td>
+                    <td>{Array.isArray(short) ? short.find(s => !s.startsWith('ECU(')) ?? short[0] : short}</td>
+                    <td>{Array.isArray(full) ? full.find(s => !s.startsWith('ECU(')) ?? full[0] : full}</td>
+                    <td>{Array.isArray(unit) ? unit[0] : unit}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </InfoModal>
+      )}
+      {modal === 'profile' && (
+        <InfoModal title="Vehicle Profile" onClose={() => setModal(null)}>
+          <div className="profile-grid">
+            {profileData.map(({ field, value }) => (
+              <div key={field} className="profile-facet">
+                <span className="profile-facet-label">{field}</span>
+                <span className="profile-facet-value">{Array.isArray(value) ? value.join(', ') : String(value)}</span>
+              </div>
+            ))}
+          </div>
+        </InfoModal>
       )}
     </div>
   )

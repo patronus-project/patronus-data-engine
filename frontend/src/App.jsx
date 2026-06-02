@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import LandingPage from './components/LandingPage'
 import KpiDetail from './components/KpiDetail'
 import ReplayPage from './components/ReplayPage'
+import { getKpiMeta, getProfileData } from './components/utils'
 import './App.css'
 
 export default function App() {
   const [history, setHistory] = useState([])
   const [keyMap, setKeyMap] = useState({})
+  const [kpiMeta, setKpiMeta] = useState({ defaultUnits: {}, userUnits: {}, shortNames: {}, fullNames: {} })
+  const [profileData, setProfileData] = useState([])
   const [selectedKpi, setSelectedKpi] = useState(null)
   const [view, setView] = useState('live') // 'live' | 'replay'
   const [loading, setLoading] = useState(true)
@@ -20,6 +23,8 @@ export default function App() {
     ])
       .then(([historyData, keysData]) => {
         setHistory(historyData)
+        setKpiMeta(getKpiMeta(historyData))
+        setProfileData(getProfileData(historyData))
         const map = {}
         keysData.forEach(k => { map[k.id] = k.DeviceID })
         setKeyMap(map)
@@ -38,15 +43,16 @@ export default function App() {
   if (error) return <div className="state-msg error">Error: {error}</div>
 
   if (view === 'replay') {
-    return <ReplayPage history={history} keyMap={keyMap} onExit={() => setView('live')} />
+    return <ReplayPage history={history} keyMap={keyMap} kpiMeta={kpiMeta} profileData={profileData} onExit={() => setView('live')} />
   }
 
   if (selectedKpi) {
     return (
       <KpiDetail
         kpiKey={selectedKpi}
-        label={keyMap[selectedKpi] || selectedKpi}
         history={history}
+        keyMap={keyMap}
+        kpiMeta={kpiMeta}
         onBack={() => setSelectedKpi(null)}
         onRefresh={fetchData}
       />
@@ -55,5 +61,5 @@ export default function App() {
 
   const lastData = history.length > 0 ? new Date(history[0].receivedAt) : null
 
-  return <LandingPage history={history} keyMap={keyMap} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastRefresh={lastRefresh} lastData={lastData} onReplay={() => setView('replay')} />
+  return <LandingPage history={history} keyMap={keyMap} kpiMeta={kpiMeta} profileData={profileData} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastRefresh={lastRefresh} lastData={lastData} onReplay={() => setView('replay')} />
 }
