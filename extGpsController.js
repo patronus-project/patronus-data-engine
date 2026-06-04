@@ -1,5 +1,5 @@
-const { tsSync } = require('./persistence/utils/tsSync');
-const { persistGpsData } = require('./persistence/obdWithExtGpsPersistence');
+const { tsSync } = require('./utils/tsSync');
+const { persistGpsData } = require('./persistence/models/obdWithExtGps');
 
 const ingestExternalGps = async (req, res) => {
     try {

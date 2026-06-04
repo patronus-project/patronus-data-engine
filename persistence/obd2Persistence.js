@@ -1,5 +1,6 @@
 const { connect } = require('./mongoose');
 const Obd2Event = require('./models/obd2Event');
+const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
 const TRIP_GAP_MS = 3 * 60 * 60 * 1000;
