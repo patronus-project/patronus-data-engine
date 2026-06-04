@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 
 const obdWithExtGpsSchema = new mongoose.Schema({
-    sync_ts:        { type: Number, required: true, unique: true, index: true },
+    sync_ts: { type: Number, required: true },
     email:          { type: String },
     v:              { type: String },
     session:        { type: String },
@@ -16,6 +16,9 @@ const obdWithExtGpsSchema = new mongoose.Schema({
     versionKey: false,
     minimize: false
 });
+
+obdWithExtGpsSchema.index({ sync_ts: 1, email: 1 }, { unique: true });
+
 
 module.exports = mongoose.models.ObdWithExtGps
     || mongoose.model('ObdWithExtGps', obdWithExtGpsSchema);
