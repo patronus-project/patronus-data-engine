@@ -76,7 +76,8 @@ async function persistObd2Query(query, userAgent) {
     }
 
     await connect();
-    await Obd2Event.create(doc);
+    Obd2Event.create(doc).catch(err => console.error('Obd2Event persist failed:', err.message));
+    persistObd(doc).catch(err => console.error('obdWithExtGps persist failed:', err.message));
     return { skipped: false };
 }
 
