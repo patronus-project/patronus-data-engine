@@ -1,5 +1,6 @@
 const { tsSync } = require('./utils/tsSync');
-const { persistGpsData } = require('./persistence/models/obdWithExtGps');
+const { connect } = require('./persistence/mongoose');
+const ObdWithExtGps = require('./persistence/models/obdWithExtGps');
 
 const ingestExternalGps = async (req, res) => {
     try {
@@ -27,17 +28,17 @@ const formatGpsPayload = (body) => {
 };
 
 const persistGps = async (sync_ts, data) => {
-    await persistGpsData({
-        sync_ts,
-        extGps: data,
-        gpsReceivedAt: new Date()
-    });
+    await connect();
+    await ObdWithExtGps.updateOne(
+        { sync_ts },
+        { $set: { extGps: data, gpsReceivedAt: new Date() } },
+        { upsert: true }
+    );
 };
 
 const persistObd = async (doc) => {
     const sync_ts = tsSync(Number(doc.time));
-    await persistObdData({
-        sync_ts,
+    const payload = {
         email:         doc.email,
         v:             doc.v,
         session:       doc.session,
@@ -45,7 +46,13 @@ const persistObd = async (doc) => {
         time:          doc.time,
         kpis:          doc.kpis,
         obdReceivedAt: new Date()
-    });
+    };
+    await connect();
+    await ObdWithExtGps.updateOne(
+        { sync_ts },
+        { $set: payload },
+        { upsert: true }
+    );
 };
 
 module.exports = { ingestExternalGps, persistObd };
