@@ -4,7 +4,7 @@ const ObdWithExtGps = require('./persistence/models/obdWithExtGps');
 
 const ingestExternalGps = async (req, res) => {
     try {
-        const formatted = formatGpsPayload(req.body);
+        const formatted = formatGpsPayload(req.body);  
         if (!formatted) {
             return res.status(400).json({ error: 'Invalid or incomplete GPS payload' });
         }
@@ -20,20 +20,22 @@ const ingestExternalGps = async (req, res) => {
 };
 
 const formatGpsPayload = (body) => {
-    const { lat, lon, acc, ts, spd, alt } = body;
-    console.log('Received GPS payload:', body);
+    const { lat, lon, acc, ts, spd, alt, dir, act, prov, aid, sat, hdop, pdop, email } = body;
+    // console.log('Received GPS payload:', body);
     if (!lat || !lon || !ts) return null;
     if (acc > 50) return null;
-    return { lat, lon, acc, spd, alt, ts };
+    return { lat, lon, acc, spd, alt, ts, dir, act, prov, aid, sat, hdop, pdop, email };
 };
 
 const persistGps = async (sync_ts, data) => {
+    const { email, ...rest } = data;
     await connect();
-    await ObdWithExtGps.updateOne(
-        { sync_ts },
-        { $set: { extGps: data, gpsReceivedAt: new Date() } },
+    const result = await ObdWithExtGps.updateOne(
+        { sync_ts, email },
+        { $set: { email, extGps: rest, gpsReceivedAt: new Date() } },
         { upsert: true }
     );
+    console.log(`GPS upsert [${sync_ts}]:`, result);
 };
 
 const persistObd = async (doc) => {
@@ -48,11 +50,12 @@ const persistObd = async (doc) => {
         obdReceivedAt: new Date()
     };
     await connect();
-    await ObdWithExtGps.updateOne(
-        { sync_ts },
+    const result = await ObdWithExtGps.updateOne(
+        { sync_ts, email: doc.email },
         { $set: payload },
         { upsert: true }
     );
+    console.log(`OBD upsert [${sync_ts}]:`, result);
 };
 
 module.exports = { ingestExternalGps, persistObd };
