@@ -1,5 +1,6 @@
 const { connect } = require('./mongoose');
 const Obd2Event = require('./models/obd2Event');
+const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
 const TRIP_GAP_MS = 3 * 60 * 60 * 1000;
@@ -76,7 +77,8 @@ async function persistObd2Query(query, userAgent) {
     }
 
     await connect();
-    await Obd2Event.create(doc);
+    Obd2Event.create(doc).catch(err => console.error('Obd2Event persist failed:', err.message));
+    persistObd(doc).catch(err => console.error('obdWithExtGps persist failed:', err.message));
     return { skipped: false };
 }
 

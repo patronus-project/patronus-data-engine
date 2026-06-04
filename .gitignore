@@ -64,3 +64,6 @@ typings/
 public/
 # source assets for PWA (icons etc)
 !frontend/public/
+
+# local npm registry override — do not commit
+.npmrc

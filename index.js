@@ -3,6 +3,7 @@ var path = require('path');
 var express = require('express');
 var http = require('http');
 var bodyParser = require('body-parser');
+const { ingestExternalGps } = require('./extGpsController');
 // var ssl = require('./security');
 app = express();
 var keymapper =  require('./data.json');
@@ -86,6 +87,8 @@ function allowAll(req, res, next) {
             res.status(200);
             res.send('OK!');
         });
+    app.route('/api/telemetry/gps-event')
+    .post(allowAll, ingestExternalGps);
 
 wsocketserver.startWebSocketServer(server);
 
