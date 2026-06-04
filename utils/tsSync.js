@@ -1,5 +1,5 @@
 // persistence/utils/tsSync.js
-const BUCKET_INTERVAL = 5000;
+const BUCKET_INTERVAL = process.env.BUCKET_INTERVAL || 10000;
 
 function tsSync(raw_timestamp) {
     const ms = new Date(raw_timestamp).getTime();
