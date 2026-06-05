@@ -808,5 +808,17 @@
  {
   "id": "time",
   "DeviceID": "Timestamp"
- }
+ },
+ { "id": "lat",  "DeviceID": "Latitude",                          "tab": "extgps", "unit": "°"    },
+ { "id": "lon",  "DeviceID": "Longitude",                         "tab": "extgps", "unit": "°"    },
+ { "id": "alt",  "DeviceID": "Altitude",                          "tab": "extgps", "unit": "m"    },
+ { "id": "acc",  "DeviceID": "Accuracy",                          "tab": "extgps", "unit": "m"    },
+ { "id": "spd",  "DeviceID": "Speed (GPS)",                       "tab": "extgps", "unit": "m/s"  },
+ { "id": "dir",  "DeviceID": "Bearing",                           "tab": "extgps", "unit": "°"    },
+ { "id": "sat",  "DeviceID": "Satellite Count",                   "tab": "extgps"                 },
+ { "id": "prov", "DeviceID": "Location Provider",                 "tab": "extgps"                 },
+ { "id": "hdop", "DeviceID": "Horizontal Dilution of Precision",  "tab": "extgps"                 },
+ { "id": "pdop", "DeviceID": "Position Dilution of Precision",    "tab": "extgps"                 },
+ { "id": "act",  "DeviceID": "Detected Activity",                 "tab": "extgps"                 },
+ { "id": "aid",  "DeviceID": "Android Device ID",                 "tab": "extgps"                 }
 ]

@@ -1,5 +1,6 @@
 const { connect } = require('./mongoose');
 const Obd2Event = require('./models/obd2Event');
+const ObdWithExtGps = require('./models/obdWithExtGps');
 const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
@@ -28,12 +29,12 @@ function isAllowedUserAgent(ua) {
     return typeof ua === 'string' && /android/i.test(ua) && /SM-/i.test(ua);
 }
 
-function buildDateWhere(start, end) {
+function buildDateWhere(start, end, field) {
     const where = {};
     if (start || end) {
-        where.receivedAt = {};
-        if (start) where.receivedAt.$gte = new Date(start);
-        if (end)   where.receivedAt.$lte = new Date(end);
+        where[field] = {};
+        if (start) where[field].$gte = new Date(start);
+        if (end)   where[field].$lte = new Date(end);
     }
     return where;
 }
@@ -60,7 +61,6 @@ function detectTrips(records) {
     trips.push({ startTime: tripStart, endTime: tripEnd, recordCount: count,
         durationMs: new Date(tripEnd) - new Date(tripStart) });
 
-    // Newest trip first, stable IDs
     return trips.reverse().map(function (t, i) {
         return Object.assign({ tripId: 'trip_' + i }, t);
     });
@@ -95,7 +95,7 @@ async function findObd2Events(filters) {
 // Trip summary — lightweight, only receivedAt fetched
 async function findTrips({ start, end } = {}) {
     await connect();
-    const where = buildDateWhere(start, end);
+    const where = buildDateWhere(start, end, 'receivedAt');
     const records = await Obd2Event
         .find(where, { receivedAt: 1 })
         .sort({ receivedAt: 1 })
@@ -107,12 +107,31 @@ async function findTrips({ start, end } = {}) {
 // Paged detail — sliding window for replay
 async function findObd2EventsPaged({ start, end, offset = 0, limit = 100 }) {
     await connect();
-    const where = buildDateWhere(start, end);
+    const where = buildDateWhere(start, end, 'receivedAt');
     const off = Number(offset);
-    const lim = Math.min(Number(limit), 500); // cap at 500 per page
+    const lim = Math.min(Number(limit), 500);
     const [records, total] = await Promise.all([
         Obd2Event.find(where).sort({ receivedAt: 1 }).skip(off).limit(lim).lean().exec(),
         Obd2Event.countDocuments(where)
+    ]);
+    return { records, total, offset: off, limit: lim };
+}
+
+// Ext GPS history — latest N joined docs
+async function findExtEvents({ limit = 100 } = {}) {
+    await connect();
+    return ObdWithExtGps.find({}).sort({ obdReceivedAt: -1 }).limit(limit).lean().exec();
+}
+
+// Ext GPS history — paged
+async function findExtEventsPaged({ start, end, offset = 0, limit = 100 }) {
+    await connect();
+    const where = buildDateWhere(start, end, 'obdReceivedAt');
+    const off = Number(offset);
+    const lim = Math.min(Number(limit), 500);
+    const [records, total] = await Promise.all([
+        ObdWithExtGps.find(where).sort({ obdReceivedAt: 1 }).skip(off).limit(lim).lean().exec(),
+        ObdWithExtGps.countDocuments(where)
     ]);
     return { records, total, offset: off, limit: lim };
 }
@@ -121,5 +140,7 @@ module.exports = {
     persistObd2Query,
     findObd2Events,
     findTrips,
-    findObd2EventsPaged
+    findObd2EventsPaged,
+    findExtEvents,
+    findExtEventsPaged,
 };

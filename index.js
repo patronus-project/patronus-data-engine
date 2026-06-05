@@ -11,7 +11,7 @@ var keymapper =  require('./data.json');
 port = process.env.PORT;
 // sslport = process.env.SSLPORT || 3443;
 const wsocketserver= require('./websocketserver');
-const obd2Persistence = require('./persistence/obd2Persistence');
+const { persistObd2Query, findObd2Events, findObd2EventsPaged, findTrips, findExtEvents, findExtEventsPaged } = require('./persistence/obd2Persistence');
 console.log(`listening on port ${port}`);
 
 var server = http.createServer(app).listen(port);
@@ -41,7 +41,7 @@ function allowAll(req, res, next) {
             const msg = JSON.stringify(req.query);
             // console.log(req.headers)
             wsocketserver.broadCastMsg(msg,author)
-            obd2Persistence.persistObd2Query(req.query, req.headers['user-agent']).catch(function (err) {
+            persistObd2Query(req.query, req.headers['user-agent']).catch(function (err) {
                 console.log('obd2 persistence failed', err.message || err);
             });
             res.status(200);
@@ -51,21 +51,16 @@ function allowAll(req, res, next) {
     app.route('/api/obd2/history/paged')
         .get(function (req, res) {
             const { start, end, offset, limit } = req.query;
-            obd2Persistence.findObd2EventsPaged({ start, end, offset, limit })
+            findObd2EventsPaged({ start, end, offset, limit })
                 .then(function (result) { res.status(200).json(result); })
                 .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
 
     app.route('/api/obd2/history')
         .get(function (req, res) {
-            obd2Persistence.findObd2Events({ limit: 100 })
-                .then(function (records) {
-                    res.status(200).json(records);
-                })
-                .catch(function (err) {
-                    console.log('history fetch failed', err.message || err);
-                    res.status(500).json({ error: err.message });
-                });
+            findObd2Events({ limit: 100 })
+                .then(function (records) { res.status(200).json(records); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
 
     app.route('/api/trips')
@@ -73,8 +68,23 @@ function allowAll(req, res, next) {
             const { start, end } = req.query;
             const resolvedEnd   = end   || new Date().toISOString();
             const resolvedStart = start || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-            obd2Persistence.findTrips({ start: resolvedStart, end: resolvedEnd })
+            findTrips({ start: resolvedStart, end: resolvedEnd })
                 .then(function (trips) { res.status(200).json(trips); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    app.route('/api/obd2/ext-history/paged')
+        .get(function (req, res) {
+            const { start, end, offset, limit } = req.query;
+            findExtEventsPaged({ start, end, offset, limit })
+                .then(function (result) { res.status(200).json(result); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    app.route('/api/obd2/ext-history')
+        .get(function (req, res) {
+            findExtEvents({ limit: 100 })
+                .then(function (records) { res.status(200).json(records); })
                 .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
     app.route('/api/obd2sim')
