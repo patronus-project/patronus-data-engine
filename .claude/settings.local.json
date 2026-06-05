@@ -11,7 +11,16 @@
       "Bash(xargs grep -l \"mongodb\\\\|mongo\\\\|mcp\")",
       "Bash(xargs grep -l \"mcp\\\\|mongodb\\\\|mongo\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(npx -y mongodb-mcp-server@latest --version)",
+      "PowerShell(\\(Get-Command npx\\).Source)",
+      "Bash(claude mcp *)",
+      "Bash(cmd /c \"claude mcp add --help 2>&1\")",
+      "Bash(cmd /c \"where claude\")",
+      "Bash(node -e \"const d=require\\('./data.json'\\); d.filter\\(k=>/\\(speed|rpm|load|horse|torque|power\\)/i.test\\(k.DeviceID\\)\\).forEach\\(k=>console.log\\(k.id, k.DeviceID\\)\\)\")",
+      "Bash(npm run *)"
     ]
   }
 }
