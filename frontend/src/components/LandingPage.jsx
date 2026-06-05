@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind, CircleHelp } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind, CircleHelp, Satellite } from 'lucide-react'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
-import { getTopKpis, getBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel } from './utils'
+import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs } from './utils'
 import KpiHero from './KpiHero'
 
 function fmt(date) {
@@ -60,18 +60,38 @@ function ProfileModal({ profileData, onClose }) {
   )
 }
 
-const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc']
-const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown' }
-const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/> }
+const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc', 'extgps']
+const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
+const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
 
-export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
-  const breadcrumb = getBreadcrumb(history)
-  const heading = history.length > 0 ? parseFloat(extractKpiMap(history[0])['kff1007']) || 0 : 0
+
+  const extBreadcrumb = useMemo(() => getExtBreadcrumb(history, extMap), [history, extMap])
+  const obdBreadcrumb = useMemo(() => getBreadcrumb(history), [history])
+  const breadcrumb      = activeSource === 'ext' && extBreadcrumb.length > 0 ? extBreadcrumb : obdBreadcrumb
+  const displayedSource = activeSource === 'ext' && extBreadcrumb.length > 0 ? 'ext' : 'obd'
+
+  const heading = useMemo(() => {
+    if (displayedSource === 'ext' && history.length > 0) {
+      const syncTs = getExtSyncTs(history[0].time)
+      const dir = parseFloat(extMap?.get(syncTs)?.extGps?.dir)
+      if (!isNaN(dir)) return dir
+    }
+    return history.length > 0 ? parseFloat(extractKpiMap(history[0])['kff1007']) || 0 : 0
+  }, [displayedSource, history, extMap])
 
   const kvm = Object.fromEntries(topKpis.map(({ key, value }) => [key, value]))
   const [modal, setModal] = useState(null)
   const [activeTab, setActiveTab] = useState('fuel')
+
+  const extGpsEntries = useMemo(() => {
+    if (!history.length || !history[0].time) return []
+    const syncTs = getExtSyncTs(history[0].time)
+    const extDoc = syncTs != null ? extMap?.get(syncTs) : null
+    const extGps = extDoc?.extGps ?? {}
+    return Object.entries(extGps).filter(([k]) => k !== 'ts')
+  }, [history, extMap])
 
   useEffect(() => {
     const id = setInterval(onRefresh, 10000)
@@ -87,12 +107,26 @@ export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, al
           <span>Last data: {fmt(lastData)}</span>
           <button className="header-action-btn" disabled title="Units &amp; Names"><BookOpen size={15} /></button>
           <button className="header-action-btn" disabled title="Vehicle Profile"><Car size={15} /></button>
+          <button
+            className="header-action-btn"
+            onClick={onToggleObdOverride}
+            title={forceObd ? 'Forced OBD GPS — click to let smart logic decide' : 'Smart GPS active — click to force OBD'}
+            style={forceObd ? { background: '#e67e22', borderColor: '#e67e22' } : {}}
+          ><Satellite size={15} /></button>
           <button className="header-action-btn" onClick={onReplay} title="Replay" style={{ background: '#e74c3c', borderColor: '#e74c3c' }}><Rewind size={15} fill="#fff" stroke="#fff" /></button>
         </div>
       </div>
+      {gpsWarning && (
+        <div className="gps-warning-bar">
+          <Satellite size={13} /> {gpsWarning}
+        </div>
+      )}
       <div className="landing">
         <div className="map-section">
           <MapView points={breadcrumb} heading={heading} />
+          <div className={`map-source-badge ${displayedSource}`}>
+            {displayedSource === 'ext' ? 'Ext GPS' : 'OBD GPS'}
+          </div>
         </div>
         <div className="kpi-section">
           {topKpis.length === 0 ? (
@@ -110,16 +144,32 @@ export default function LandingPage({ history, keyMap, tabMap, staticUnitMap, al
                   ))}
                 </div>
                 <div className="kpi-grid-area">
-                  {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).length === 0 ? (
-                    <p className="no-data">No {TAB_LABELS[activeTab]} data in current session.</p>
+                  {activeTab === 'gps' && displayedSource === 'ext' && (
+                    <div className="ext-active-toast"><Satellite size={11} /> Ext GPS Active</div>
+                  )}
+                  {activeTab === 'extgps' && displayedSource === 'obd' && (
+                    <div className="ext-active-toast obd"><MapPin size={11} /> OBD GPS Active</div>
+                  )}
+                  {activeTab === 'extgps' ? (
+                    extGpsEntries.length === 0
+                      ? <p className="no-data">No Ext GPS data available.</p>
+                      : <div className="kpi-grid">
+                          {extGpsEntries.map(([k, v]) => (
+                            <KpiCard key={k} kpiKey={k} label={keyMap[k] || k} value={String(v)} unit={staticUnitMap[k] || ''} />
+                          ))}
+                        </div>
                   ) : (
-                    <div className="kpi-grid">
-                      {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
-                        <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)}
-                                 value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)}
-                                 alert={getAlertLevel(key, value, alertMap)} onClick={() => onSelectKpi(key)} />
-                      ))}
-                    </div>
+                    topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).length === 0 ? (
+                      <p className="no-data">No {TAB_LABELS[activeTab]} data in current session.</p>
+                    ) : (
+                      <div className="kpi-grid">
+                        {topKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
+                          <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)}
+                                   value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)}
+                                   alert={getAlertLevel(key, value, alertMap)} onClick={() => onSelectKpi(key)} />
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               </div>

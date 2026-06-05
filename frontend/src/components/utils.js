@@ -73,6 +73,34 @@ export function getPathPoints(records) {
   return points
 }
 
+// Same as getPathPoints but uses ext GPS coordinates
+export function getExtPathPoints(records, extMap) {
+  const step = Math.max(1, Math.floor(records.length / 150))
+  const points = []
+  for (let i = 0; i < records.length; i += step) {
+    const syncTs = getExtSyncTs(records[i].time)
+    const extDoc = syncTs != null ? extMap.get(syncTs) : null
+    const lat = parseFloat(extDoc?.extGps?.lat)
+    const lng = parseFloat(extDoc?.extGps?.lon)
+    if (!isNaN(lat) && !isNaN(lng)) points.push([lat, lng])
+  }
+  return points
+}
+
+// Breadcrumb for live view using ext GPS (history is newest-first)
+export function getExtBreadcrumb(history, extMap) {
+  const points = []
+  const ordered = [...history].reverse()
+  for (let i = 0; i < ordered.length; i += 10) {
+    const syncTs = getExtSyncTs(ordered[i].time)
+    const extDoc = syncTs != null ? extMap.get(syncTs) : null
+    const lat = parseFloat(extDoc?.extGps?.lat)
+    const lng = parseFloat(extDoc?.extGps?.lon)
+    if (!isNaN(lat) && !isNaN(lng)) points.push([lat, lng])
+  }
+  return points
+}
+
 export function extractKpiMap(record) {
   const map = {}
   if (!record.kpis) return map
@@ -160,6 +188,23 @@ export function getBreadcrumb(history) {
     }
   }
   return points
+}
+
+// Build a Map<sync_ts, extDoc> from ext-history records
+export function buildExtMap(extRecords) {
+  const map = new Map()
+  if (!Array.isArray(extRecords)) return map
+  extRecords.forEach(doc => {
+    if (doc.sync_ts != null) map.set(doc.sync_ts, doc)
+  })
+  return map
+}
+
+// Floor a record's time string to the nearest 10-second bucket (matches server sync_ts)
+export function getExtSyncTs(time) {
+  const ms = Number(time)
+  if (!ms) return null
+  return Math.floor(ms / 10000) * 10000
 }
 
 // Returns [{ value, receivedAt }] for a specific KPI key across all records

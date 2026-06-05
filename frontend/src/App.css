@@ -10,6 +10,51 @@
 }
 .state-msg.error { color: #c0392b; }
 
+.map-source-badge {
+  position: absolute;
+  bottom: 15px;
+  right: 10px;
+  z-index: 1000;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+.map-source-badge.ext { background: #c0392b; color: #fff; }
+.map-source-badge.obd { background: #1a5e30; color: #fff; }
+
+.ext-active-toast {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  margin-bottom: 6px;
+  background: #c0392b22;
+  border: 1px solid #c0392b66;
+  border-radius: 4px;
+  color: #c0392b;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.ext-active-toast.obd {
+  background: #1a5e3022;
+  border-color: #1a5e3066;
+  color: #1a5e30;
+}
+
+.gps-warning-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: #7d4a00;
+  color: #ffd580;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
 .app-header {
   display: flex;
   align-items: center;
@@ -36,6 +81,7 @@
 }
 
 .map-section {
+  position: relative;
   width: 40%;
   flex-shrink: 0;
   border-right: 1px solid #e0e0e0;
