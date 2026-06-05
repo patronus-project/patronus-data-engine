@@ -254,6 +254,7 @@
   background: #fef3c7;
 }
 .kpi-alert-amber .kpi-label { color: #78350f; font-weight: 700; }
+.kpi-card.kpi-stale { opacity: 0.38; pointer-events: none; }
 .kpi-card.kpi-alert-amber .kpi-value { color: #f59e0b; font-weight: 700; font-size: 1.5rem; }
 
 .kpi-alert-red {

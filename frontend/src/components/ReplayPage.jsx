@@ -47,16 +47,32 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
 
   const currentKpiMap = useMemo(() => currentRecord ? extractKpiMap(currentRecord) : {}, [currentRecord])
 
-  const currentKpis = useMemo(
-    () => Object.entries(currentKpiMap).map(([key, value]) => ({ key, value })),
-    [currentKpiMap]
-  )
-
   const [activeTab, setActiveTab] = useState('fuel')
 
   const [forceObd, toggleObdOverride] = useExtGpsToggle()
   const [extMap, setExtMap] = useState(new Map())
   const sourceKey = source ? `${source.start}|${source.end}` : ''
+
+  // Sticky KPI map — keeps last-seen value per key, marks missing keys as stale
+  const [stickyKpis, setStickyKpis] = useState({})
+
+  useEffect(() => { setStickyKpis({}) }, [sourceKey])
+
+  useEffect(() => {
+    const entries = Object.entries(currentKpiMap)
+    if (entries.length === 0) return
+    setStickyKpis(prev => {
+      const next = {}
+      Object.entries(prev).forEach(([k, v]) => { next[k] = { value: v.value, stale: true } })
+      entries.forEach(([k, v]) => { next[k] = { value: v, stale: false } })
+      return next
+    })
+  }, [currentKpiMap])
+
+  const currentKpis = useMemo(
+    () => Object.entries(stickyKpis).map(([key, { value, stale }]) => ({ key, value, stale })),
+    [stickyKpis]
+  )
   useEffect(() => {
     if (!source) { setExtMap(new Map()); return }
     const params = new URLSearchParams({ start: source.start, end: source.end, limit: 500 })
@@ -238,8 +254,8 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
                           <p className="no-data">No {TAB_LABELS[activeTab]} data for this frame.</p>
                         ) : (
                           <div className="kpi-grid">
-                            {currentKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value }) => (
-                              <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} alert={getAlertLevel(key, value, alertMap)} />
+                            {currentKpis.filter(({ key }) => activeTab === 'misc' ? !tabMap[key] : tabMap[key] === activeTab).map(({ key, value, stale }) => (
+                              <KpiCard key={key} kpiKey={key} label={getKpiLabel(key, kpiMeta, keyMap)} value={value} unit={getKpiUnit(key, kpiMeta, staticUnitMap)} alert={getAlertLevel(key, value, alertMap)} stale={stale} />
                             ))}
                           </div>
                         )
