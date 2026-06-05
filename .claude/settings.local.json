@@ -20,7 +20,12 @@
       "Bash(cmd /c \"claude mcp add --help 2>&1\")",
       "Bash(cmd /c \"where claude\")",
       "Bash(node -e \"const d=require\\('./data.json'\\); d.filter\\(k=>/\\(speed|rpm|load|horse|torque|power\\)/i.test\\(k.DeviceID\\)\\).forEach\\(k=>console.log\\(k.id, k.DeviceID\\)\\)\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "WebSearch",
+      "WebFetch(domain:gpslogger.app)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git commit *)"
     ]
   }
 }
