@@ -10,13 +10,14 @@
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Framework | React 19 (Vite) | JSX, hooks, no class components |
+| Framework | React 19 (Vite 8) | JSX, hooks, no class components |
 | Map | react-leaflet 5 + Leaflet 1.9 | OpenStreetMap tiles |
-| Routing | OSRM public server | `router.project-osrm.org` |
-| Icons | lucide-react | Feather-style, SVG stroke icons |
-| CSS | Plain CSS (App.css + index.css) | No CSS-in-JS, no Tailwind |
+| Road routing | OSRM public server | `router.project-osrm.org` |
+| Icons | lucide-react | Feather-style SVG stroke icons |
+| CSS | Plain CSS (`App.css`) | No CSS-in-JS, no Tailwind |
 | State | React `useState` / `useRef` / `useMemo` | No Redux, no context |
-| Data | REST polling + no WebSocket on frontend | Backend serves `/api/*` |
+| Data | REST polling — no WebSocket on the frontend | Backend serves `/api/*` |
+| PWA | vite-plugin-pwa (Workbox) | Service worker, manifest, offline asset cache |
 
 ---
 
@@ -35,9 +36,16 @@
 | `--text-label` | `#888` | KPI card labels, secondary text |
 | `--text-main` | `#1a1a2e` | Primary values |
 
-### Tab accent colours (one per tab)
+### Alert colours
 
-| Tab | Icon color `--c` | Background `--bg` |
+| Level | Border / value | Background | Label colour |
+|---|---|---|---|
+| Amber | `#f59e0b` | `#fef3c7` | `#78350f` |
+| Red | `#ef4444` | `#fee2e2` | `#7f1d1d` |
+
+### Tab accent colours
+
+| Tab | Icon `--c` | Background `--bg` |
 |---|---|---|
 | Fuel | `#f59e0b` | `#fef3c7` |
 | Engine | `#ef4444` | `#fee2e2` |
@@ -45,6 +53,7 @@
 | Performance | `#8b5cf6` | `#ede9fe` |
 | GPS | `#10b981` | `#d1fae5` |
 | Sensors | `#06b6d4` | `#cffafe` |
+| Misc | `#6b7280` | `#f3f4f6` |
 
 ### Typography
 
@@ -52,6 +61,7 @@
 - Header title: `1.3rem`, weight 600, letter-spacing 1px
 - KPI card label: `0.72rem`, color `#888`
 - KPI card value: `1.3rem`, weight 600
+- Alert card value: `1.5rem`, weight 700, vivid alert colour
 - Stat box label: `0.66rem`, uppercase, letter-spacing 0.4px, color `#9099b8`
 - Stat box value: `1.35rem`, weight 700
 - Gauge label: `0.68rem`, color `#aaa`
@@ -60,7 +70,7 @@
 
 ## 3. App Structure and View Router
 
-The app has **three top-level views**, controlled by `view` state in `App.jsx`.
+Three top-level views controlled by `view` state in `App.jsx`:
 
 ```
 App
@@ -76,27 +86,33 @@ App
 | `history` | `OBD2Record[]` | Latest 100 records from `/api/obd2/history`, newest first |
 | `keyMap` | `{ [id]: string }` | Maps KPI key → human label, from `/api/keys` |
 | `tabMap` | `{ [id]: string }` | Maps KPI key → tab name, from `/api/keys` |
-| `kpiMeta` | `KpiMeta` | Units, short/full names extracted from history records |
+| `staticUnitMap` | `{ [id]: string }` | Maps KPI key → static unit string, from `/api/keys` |
+| `alertMap` | `{ [id]: AlertConfig }` | Maps KPI key → alert thresholds, from `/api/keys` |
+| `kpiMeta` | `KpiMeta` | Dynamic units/names extracted from history OBD metadata keys |
 | `profileData` | `{ field, value }[]` | Vehicle profile fields from history |
 | `selectedKpi` | `string \| null` | If set, shows KpiDetail for that key |
 | `view` | `'live' \| 'replay'` | Current top-level view |
 | `loading` | `boolean` | Initial load guard |
-| `lastRefresh` | `Date` | When the last `/api/obd2/history` call completed |
+| `lastRefresh` | `Date` | Timestamp of last successful history fetch |
 
 ### Initial data fetch
 
-On mount, App fetches both endpoints in parallel:
+On mount, fetches both endpoints in parallel:
 
 ```
-GET /api/obd2/history  → OBD2Record[]  (limit 100, sorted newest first)
-GET /api/keys          → KeyEntry[]    (id, DeviceID, tab)
+GET /api/obd2/history  → OBD2Record[]
+GET /api/keys          → KeyEntry[]
 ```
 
-After both resolve:
-1. Derive `kpiMeta` by scanning all history records for meta-prefixed KPI keys
-2. Derive `profileData` by scanning for `profile*`-prefixed KPI keys
-3. Build `keyMap`: `{ [entry.id]: entry.DeviceID }`
-4. Build `tabMap`: `{ [entry.id]: entry.tab }` (only entries that have `tab`)
+After both resolve, builds four maps from `KeyEntry[]`:
+```js
+keysData.forEach(k => {
+  map[k.id]  = k.DeviceID          // keyMap
+  if (k.tab)    tmap[k.id] = k.tab    // tabMap
+  if (k.unit)   umap[k.id] = k.unit   // staticUnitMap
+  if (k.alerts) amap[k.id] = k.alerts // alertMap
+})
+```
 
 ---
 
@@ -126,124 +142,224 @@ After both resolve:
 ```
 
 **Key schema rules:**
-- Each element in `kpis` is a single-key object `{ key: value }` where value is always a string
-- Keys starting with `defaultUnit`, `userUnit`, `userShortName`, `userFullName` are **metadata**, not sensor readings
-- Keys starting with `profile` are **vehicle profile** data
-- All other keys are **sensor KPI values** (e.g. `kd`, `kff1006`, `kc`)
-- The `k` prefix on sensor keys is the Torque app convention (e.g. `kd` = OBD PID 0x0D = vehicle speed)
+- Each element in `kpis` is a single-key object `{ key: value }` — value always a string
+- Keys with prefixes `defaultUnit`, `userUnit`, `userShortName`, `userFullName` are **metadata**
+- Keys with prefix `profile` are **vehicle profile** data
+- All other keys are **sensor readings** (e.g. `kd` = OBD PID 0x0D = vehicle speed)
+- The `k` prefix is Torque app convention
 
 ### KeyEntry (from `/api/keys`)
 
 ```json
 {
-  "id": "kff1006",
-  "DeviceID": "GPS Latitude",
-  "tab": "gps"
+  "id": "kd",
+  "DeviceID": "Speed (OBD)",
+  "tab": "engine",
+  "unit": "km/h",
+  "alerts": {
+    "amber": 81,
+    "red": 101,
+    "dir": "gte"
+  }
 }
 ```
+
+Fields:
+- `id` — KPI key string (matches keys in OBD2Record.kpis)
+- `DeviceID` — human-readable label
+- `tab` — which tab this key appears in (`fuel | engine | trip | performance | gps | sensors`)
+- `unit` *(optional)* — static unit string, used as fallback when OBD device sends no unit metadata
+- `alerts` *(optional)* — alert threshold config (see Alert System section)
 
 ---
 
 ## 5. Utility Functions (`utils.js`)
 
-These are pure functions. Rebuild them identically on any platform.
+All pure functions. Rebuild identically on any platform.
+
+### Unit Parser Registry
+
+```js
+const UNIT_PARSERS = {
+  'G': raw => {
+    const n = parseFloat(raw)
+    return isNaN(n)
+      ? { value: raw, unit: 'G' }
+      : { value: (n / 100).toFixed(3), unit: 'G' }
+  },
+}
+```
+
+**Why G needs a parser:** Torque Pro encodes G-force as integer × 100 (100 = 1.00 G). So `100.688` → `1.007 G`. Add more parsers to `UNIT_PARSERS` as needed for other non-linear encodings.
+
+### `parseUnit(unit, rawValue) → { value, unit }`
+
+Looks up `unit` in `UNIT_PARSERS`. If a parser exists, calls it and returns the transformed result. If no parser, returns `{ value: rawValue, unit }` unchanged.
+
+Called by `FormattedValue` before any display formatting.
+
+### `getAlertLevel(kpiKey, rawValue, alertMap) → 'red' | 'amber' | null`
+
+```
+cfg = alertMap[kpiKey]
+if no cfg → null
+v = parseFloat(rawValue)
+if isNaN(v) → null
+
+if cfg.dir !== 'lte':          (default: gte)
+  v >= cfg.red   → 'red'
+  v >= cfg.amber → 'amber'
+else:                          (lte: low-direction alerts)
+  v <= cfg.red   → 'red'
+  v <= cfg.amber → 'amber'
+
+otherwise → null
+```
 
 ### `extractKpiMap(record) → { [key]: string }`
 
-Reads `record.kpis` array, skips meta-prefixed keys, returns a flat `{key: value}` map for the sensor readings in that single record.
+Reads `record.kpis`, skips meta-prefixed keys, returns flat sensor map for one record.
 
 Meta prefixes to skip: `defaultUnit`, `userUnit`, `userShortName`, `userFullName`, `profile`
 
 ### `getTopKpis(history) → { key, value, receivedAt }[]`
 
-Iterates history (newest first), collects the **first occurrence** of each KPI key. Result is the most-recent value for every key seen across all 100 records. This is the primary input for the live view KPI grid.
+Iterates history (newest first), collects the **first occurrence** of each key. Result = most-recent value per key across all 100 records. Primary input for the live KPI grid.
 
 ### `getKpiMeta(history) → KpiMeta`
 
-Scans all records, collects meta values:
-- `defaultUnit{sensorId}` → `defaultUnits[sensorId]`
-- `userUnit{sensorId}` → `userUnits[sensorId]`
-- `userShortName{sensorId}` → `shortNames[sensorId]`
-- `userFullName{sensorId}` → `fullNames[sensorId]`
-
-First occurrence wins (records are newest-first, so newest metadata wins).
+Scans all records for dynamic metadata keys. First occurrence wins.
+- `defaultUnit{sensorId}` → `meta.defaultUnits[sensorId]`
+- `userUnit{sensorId}` → `meta.userUnits[sensorId]`
+- `userShortName{sensorId}` → `meta.shortNames[sensorId]`
+- `userFullName{sensorId}` → `meta.fullNames[sensorId]`
 
 ### `getKpiLabel(kpiKey, kpiMeta, keyMap) → string`
 
-Label resolution priority:
-1. `kpiMeta.shortNames[sensorId]` — strip leading `k` from key to get sensorId
-2. `kpiMeta.fullNames[sensorId]`
-3. `keyMap[kpiKey]` (from data.json lookup)
-4. Raw `kpiKey` as fallback
+Priority: `shortNames[id]` → `fullNames[id]` → `keyMap[kpiKey]` → raw key
 
-For array values (multiple ECU responses), skip entries starting with `ECU(` and take the first clean one.
+For array values (multi-ECU): skip entries starting with `ECU(`, take first clean one.
 
-### `getKpiUnit(kpiKey, kpiMeta) → string`
+### `getKpiUnit(kpiKey, kpiMeta, staticUnitMap) → string`
 
-Unit priority: `userUnits[sensorId]` → `defaultUnits[sensorId]` → `''`
+Priority: `userUnits[id]` (OBD device) → `defaultUnits[id]` (OBD device) → `staticUnitMap[kpiKey]` (data.json) → `''`
+
+The `staticUnitMap` fallback ensures manually annotated units (e.g. `kPa` for exhaust pressure, `G` for G-force, `%` for battery) display correctly even when the OBD device sends no unit metadata.
 
 ### `getProfileData(history) → { field, value }[]`
 
-Scans history for `profile`-prefixed KPI keys. Strips the prefix to get the field name. First occurrence wins. Returns array of `{ field, value }`.
+Scans for `profile`-prefixed KPI keys. Strips prefix, first occurrence wins.
 
 ### `getBreadcrumb(history) → [lat, lng][]`
 
-History is reversed to oldest-first. Takes every 10th record, extracts `kff1006` (lat) and `kff1005` (lng). Only pushes if both are valid floats. Returns max ~10 points for 100 records.
+Reverses history to oldest-first. Every 10th record → `[kff1006, kff1005]`. Max ~10 points.
 
 ### `getPathPoints(records) → [lat, lng][]`
 
-Like getBreadcrumb but for replay: takes an ordered (oldest-first) slice of records. Sampling step = `max(1, floor(records.length / 150))` to cap at 150 points.
+For replay: samples `records.slice(0, frame+1)` with step `max(1, floor(len/150))` to cap at 150 points.
 
 ### `getKpiHistory(history, kpiKey) → { value, receivedAt }[]`
 
-Returns all readings for a single key across all history records, oldest-first. Used by KpiDetail.
+All readings for one key, oldest-first. Used by KpiDetail.
 
 ---
 
-## 6. Live View (`LandingPage`)
+## 6. Alert System
+
+### data.json alert config
+
+```json
+"alerts": {
+  "amber": 81,
+  "red": 101,
+  "dir": "gte"
+}
+```
+
+- `dir: "gte"` (default) — alert fires when `value >= threshold` (high-direction: speed, temp, RPM)
+- `dir: "lte"` — alert fires when `value <= threshold` (low-direction: fuel level, battery, range)
+
+### Configured thresholds
+
+| Key | Sensor | Amber | Red | Dir |
+|---|---|---|---|---|
+| `kd` | Speed (OBD) | 81 km/h | 101 km/h | gte |
+| `kc` | Engine RPM | 3001 | 5001 | gte |
+| `k5` | Coolant Temp | 95°C | 100°C | gte |
+| `k5c` | Oil Temp | 100°C | 120°C | gte |
+| `k4` | Engine Load | 80% | 95% | gte |
+| `k2f` | Fuel Level | 20% | 10% | lte |
+| `kff129a` | Device Battery | 30% | 15% | lte |
+| `kff126a` | Distance to Empty | 400 km | 200 km | lte |
+
+### Visual treatment on KPI cards
+
+```
+Normal card:
+  border: 1px solid #e0e0e0
+  background: #fff
+  label: #888
+  value: #1a1a2e, 1.3rem, weight 600
+
+Amber card (.kpi-alert-amber):
+  border: 2px solid #f59e0b, left: 5px solid #f59e0b
+  background: #fef3c7
+  label: #78350f, weight 700
+  value: #f59e0b, 1.5rem, weight 700
+
+Red card (.kpi-alert-red):
+  border: 2px solid #ef4444, left: 5px solid #ef4444
+  background: #fee2e2
+  label: #7f1d1d, weight 700
+  value: #ef4444, 1.5rem, weight 700
+```
+
+The left-edge accent bar (5px) is the primary visual signal. The thicker border, tinted background, and vivid value colour reinforce it. Use `.kpi-card.kpi-alert-{level}` selector (two classes on same element) to ensure specificity beats mobile overrides.
+
+---
+
+## 7. Live View (`LandingPage`)
 
 ### Layout
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ APP HEADER (dark navy bar)                                  │
-│  "Patronus — Live Telemetry"  │ Refreshed  Last data  🔖 🚗 ⏪│
-├──────────────────────────┬──────────────────────────────────┤
-│                          │ KPI SECTION                      │
-│                          │  ┌─ HERO (gauges + stat tiles) ─┐│
-│  MAP SECTION (40% width) │  │ Speed  RPM  HP  Torque        ││
-│                          │  │        Load  LoadAbs          ││
-│  [Leaflet map]           │  └───────────────────────────────┘│
-│                          │  ┌───┬──────────────────────────┐│
-│                          │  │ T │                          ││
-│                          │  │ A │  KPI CARD GRID           ││
-│                          │  │ B │  (filtered by active tab)││
-│                          │  │ S │                          ││
-│                          │  └───┴──────────────────────────┘│
-└──────────────────────────┴──────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ APP HEADER (navy)                                            │
+│  "Patronus — Live Telemetry"   Refreshed  Last data  🔖 🚗 ⏪ │
+├─────────────────────┬────────────────────────────────────────┤
+│                     │ KPI SECTION (flex column)              │
+│  MAP SECTION        │  ┌── HERO (hero-pad, 20px h-padding) ─┐│
+│  (40% width)        │  │ [Speed] [RPM] [HP][Torque]         ││
+│                     │  │             [Load][Load Abs]        ││
+│  [Leaflet map]      │  └────────────────────────────────────┘│
+│  [Compass BL]       │  ┌─────────────────────────────────────┤│
+│  [Mode toggle TR]   │  │ Tab │  KPI Grid (filtered by tab)  ││
+│                     │  │ Bar │                              ││
+│                     │  └─────────────────────────────────────┘│
+└─────────────────────┴────────────────────────────────────────┘
 ```
 
-- Map section: fixed `40%` width, full height
-- KPI section: fills remaining `60%`, `flex-direction: column`
-- On mobile (≤768px): stacks vertically, map gets fixed 280px height
+- Map: fixed 40% width, full height
+- KPI section: flex column, overflow hidden; grid area scrolls independently
+- Mobile (≤768px): stacks vertically, map 240px, tab bar stays vertical on left
 
 ### Auto-refresh
 
-`setInterval(fetchData, 10000)` — polls `/api/obd2/history` every 10 seconds. The interval is set up in `useEffect` inside LandingPage and cleared on unmount.
+`setInterval(fetchData, 10000)` in `useEffect`. Cleared on unmount.
 
-### Header buttons
+### Header buttons (icon-only, lucide-react)
 
 | Button | Icon | State | Action |
 |---|---|---|---|
-| Units & Names | `BookOpen` | Disabled | (future feature) |
-| Vehicle Profile | `Car` | Disabled | (future feature) |
-| Replay | `Rewind` solid white on red bg | Active | Sets `view = 'replay'` |
+| Units & Names | `BookOpen` | Disabled (future) | — |
+| Vehicle Profile | `Car` | Disabled (future) | — |
+| Replay | `Rewind` (solid white, red bg `#e74c3c`) | Active | `setView('replay')` |
 
 ---
 
-## 7. KPI Hero Section (`KpiHero.jsx`)
+## 8. KPI Hero Section (`KpiHero.jsx`)
 
-Always visible at the top of the KPI section. Shows the most critical metrics prominently regardless of which tab is active.
+Pinned above the tab bar. Always visible regardless of active tab.
 
 ### Layout: 3-column grid
 
@@ -252,36 +368,30 @@ Always visible at the top of the KPI section. Shows the most critical metrics pr
                               [ Load  | Load Abs ]
 ```
 
-### Arc Gauge (speed and RPM)
-
-A 270° SVG arc gauge. Implementation:
+### Arc Gauge (SVG)
 
 ```
-viewBox: "0 0 100 88"
-Center: (50, 56)
-Radius: 36
-Start angle: 135° (7-o'clock, measuring from positive x-axis clockwise in SVG)
-Sweep: 270°
+viewBox: "0 0 100 88"   Center: (50, 56)   Radius: 36
+Start: 135°   Sweep: 270°   strokeWidth: 9   strokeLinecap: round
 
-Track path: arcPath(cx, cy, r, 135, 270) — light gray #ebebeb, strokeWidth 9
-Value path: arcPath(cx, cy, r, 135, pct * 270) — colored fill, strokeWidth 9
-Both use strokeLinecap="round"
+Track: arcPath(cx, cy, r, 135, 270)           → #ebebeb
+Fill:  arcPath(cx, cy, r, 135, pct * 270)     → accent colour
 
-arcPath formula:
-  startX = cx + r * cos(toRad(startDeg))
-  startY = cy + r * sin(toRad(startDeg))
-  endX = cx + r * cos(toRad(startDeg + sweepDeg))
-  endY = cy + r * sin(toRad(startDeg + sweepDeg))
-  largeArcFlag = sweepDeg > 180 ? 1 : 0
-  path = "M {startX} {startY} A {r} {r} 0 {largeArcFlag} 1 {endX} {endY}"
+arcPath(cx, cy, r, startDeg, sweepDeg):
+  sx = cx + r·cos(toRad(startDeg))
+  sy = cy + r·sin(toRad(startDeg))
+  ex = cx + r·cos(toRad(startDeg + sweepDeg))
+  ey = cy + r·sin(toRad(startDeg + sweepDeg))
+  large = sweepDeg > 180 ? 1 : 0
+  → "M {sx} {sy} A {r} {r} 0 {large} 1 {ex} {ey}"
 ```
 
-**Speed gauge:** key `kd`, max 200, unit `km/h`, color `#3498db`
-**RPM gauge:** key `kc`, max 8000, unit `RPM`, color `#e67e22`
+| Gauge | Key | Max | Unit | Colour |
+|---|---|---|---|---|
+| Speed | `kd` | 200 | km/h | `#3498db` |
+| RPM | `kc` | 8000 | RPM | `#e67e22` |
 
-Values are rounded to whole integers.
-
-### Stat Tiles (2×2 grid)
+### Stat Tiles (2×2 grid, always all four)
 
 | Tile | Key | Unit |
 |---|---|---|
@@ -290,126 +400,140 @@ Values are rounded to whole integers.
 | Engine Load | `k4` | % |
 | Load (Abs) | `k43` | % |
 
-**Sticky behavior:** `KpiHero` maintains a `lastSeen` ref (not state — no re-render). On each render:
-1. Any fresh numeric value for the tracked keys is absorbed into `lastSeen`
-2. `resolve(key)` checks: fresh value in `kvm` → show in normal dark text
-3. If missing from `kvm` but in `lastSeen` → show `lastSeen` value in light gray (`#ccc`) — **stale**
-4. Never seen → show `—`
+### Sticky behavior
 
-This means tiles never flash to zero or `—` when a frame doesn't contain a particular KPI.
+`KpiHero` holds a `lastSeen` ref (not state — no re-render triggered). On every render:
+1. Any fresh numeric value for tracked keys updates `lastSeen`
+2. `resolve(key)`: fresh → normal dark text | cached stale → `#ccc` light gray | never seen → `—`
+
+This prevents tiles from flashing to zero/`—` when a frame or poll lacks a particular key.
 
 ---
 
-## 8. KPI Tab Bar
+## 9. KPI Tab Bar
 
-A vertical strip of 6 icon-only buttons on the left edge of the KPI body area.
+A vertical strip of icon-only buttons on the left edge of `.kpi-body`.
 
-### Tab definitions (in order)
+### Tab definitions (in display order)
 
-| Tab key | Label | Icon | Accent color |
+| Tab key | Label | Icon (lucide) | Accent `--c` / `--bg` |
 |---|---|---|---|
-| `fuel` | Fuel | `Droplet` | `#f59e0b` on `#fef3c7` |
-| `engine` | Engine | `Cpu` | `#ef4444` on `#fee2e2` |
-| `trip` | Trip | `Navigation` | `#3b82f6` on `#dbeafe` |
-| `performance` | Perf | `Zap` | `#8b5cf6` on `#ede9fe` |
-| `gps` | GPS | `MapPin` | `#10b981` on `#d1fae5` |
-| `sensors` | Sensors | `Activity` | `#06b6d4` on `#cffafe` |
+| `fuel` | Fuel | `Droplet` | `#f59e0b` / `#fef3c7` |
+| `engine` | Engine | `Cpu` | `#ef4444` / `#fee2e2` |
+| `trip` | Trip | `Navigation` | `#3b82f6` / `#dbeafe` |
+| `performance` | Perf | `Zap` | `#8b5cf6` / `#ede9fe` |
+| `gps` | GPS | `MapPin` | `#10b981` / `#d1fae5` |
+| `sensors` | Sensors | `Activity` | `#06b6d4` / `#cffafe` |
+| `misc` | Unknown | `CircleHelp` | `#6b7280` / `#f3f4f6` |
 
-### Tab button states
+### Filtering logic
+
+```js
+// All named tabs
+topKpis.filter(({ key }) => tabMap[key] === activeTab)
+
+// Misc tab — keys with no tab assignment
+topKpis.filter(({ key }) => !tabMap[key])
+```
+
+If filtered result is empty: show `"No {label} data in current session."`.
+
+### Button states
 
 - **Default:** icon `#d0d0d0`, no background
-- **Hover:** icon in `--c`, background `--bg`, scale transform `1.25×`, tooltip label fades in to the right
-- **Active:** icon in `--c`, background `--bg`, `box-shadow: inset -2px 0 0 var(--c)` (right-edge accent bar)
+- **Hover:** `background: var(--bg)`, `color: var(--c)`, `transform: scale(1.25)`, tooltip fades in
+- **Active:** `background: var(--bg)`, `color: var(--c)`, `box-shadow: inset -2px 0 0 var(--c)`
 
 ### Tooltip
 
-CSS `::after` pseudo-element. `content: attr(data-label)` reads the label text from the `data-label` attribute on the button. Appears to the right (`left: calc(100% + 10px)`), centered vertically. Dark navy pill, fades in on hover.
+CSS `::after` with `content: attr(data-label)`. Appears to the right of the button (`left: calc(100% + 10px)`), vertically centered. Navy pill, opacity 0 → 1 on hover. Each button has `data-tab` (for CSS custom properties) and `data-label` (for tooltip content).
 
-### Tab filtering
+### Tab key assignments in data.json
 
-`topKpis.filter(({ key }) => tabMap[key] === activeTab)`
+- **fuel**: Fuel trims, fuel pressure, fuel level, economy (MPG/KPL/L100km), CO₂, flow rates, distance to empty, fuel remaining, ethanol %
+- **engine**: RPM, OBD speed, engine load (×2), coolant/oil/intake temps, MAF, manifold pressure, catalyst/exhaust temps, timing advance, voltages, transmission temps, volumetric efficiency, run time
+- **trip**: Trip distance, times (total/moving/stationary), avg speeds, avg economy, costs, MIL distance
+- **performance**: HP, torque, engine kW, turbo boost/vacuum, all acceleration/braking split times
+- **gps**: GPS lat/lng/altitude, speed (GPS), heading, bearing, accuracy, satellites, GPS vs OBD delta, device battery, G-force axes (X/Y/Z/total), GPS Altitude ALT
+- **sensors**: All O2 sensors, AFR measured/commanded, throttle positions, pedal positions, EGR, barometric pressure, accelerometers, tilt, air status, commanded lambda
+- **misc** *(implicit)*: any key not found in `tabMap` (not in data.json, or data.json entry has no `tab` field)
 
-If the filtered array is empty, show: `"No {tabLabel} data in current session."` in italic gray.
+### New sensors added to data.json
 
-### Tab assignments in data.json
+| Key | Label | Tab | Unit |
+|---|---|---|---|
+| `k70` | GPS Altitude ALT | gps | m |
+| `k73` | Exhaust Pressure | engine | kPa |
+| `kff129a` | Device Battery Level | gps | % |
+| `kff12a4` | G-Force X (Lateral) | gps | G |
+| `kff12a5` | G-Force Y (Vertical/Gravity) | gps | G |
+| `kff12a6` | G-Force Z (Accel/Brake) | gps | G |
+| `kff12ab` | G-Force Total (Vector Sum) | gps | G |
 
-The `tab` field on each data.json entry drives which tab a KPI appears in. Assignment summary:
-
-- **fuel**: Fuel trims, fuel pressure, fuel level, economy (MPG/KPL/L100km), CO₂, flow rates, distance to empty, fuel remaining, ethanol
-- **engine**: RPM, OBD speed, engine load, coolant temp, oil temp, intake temps, MAF, manifold pressure, catalyst temps, exhaust temps, timing advance, voltages, transmission temps, volumetric efficiency, run time
-- **trip**: Trip distance, trip times (total/moving/stationary), trip avg speeds, trip avg economy, trip costs, MIL distance, codes-cleared distance
-- **performance**: HP, torque, engine kW, turbo boost/vacuum, all 0-60/0-100/quarter-mile/acceleration/braking times
-- **gps**: GPS lat/lng, speed (GPS), altitude, heading, bearing, GPS accuracy, satellite count, GPS vs OBD speed delta
-- **sensors**: All O2 sensors (equivalence ratios, voltages, wide-range), AFR measured/commanded, throttle positions, pedal positions, EGR, barometric pressure, accelerometers X/Y/Z/total, tilt X/Y/Z, air status, commanded lambda
+**G-Force encoding:** Torque Pro sends G-force × 100. `kff12a5 = 100.688` means `1.007 G`. The `G` unit parser in `UNIT_PARSERS` handles this division automatically. The `staticUnitMap` ensures `G` is used even when the OBD device doesn't send `defaultUnit` metadata.
 
 ---
 
-## 9. KPI Card
-
-Each KPI card is a clickable tile in the grid.
+## 10. KPI Card
 
 ```
 ┌─────────────────────────┐
-│ GPS Latitude        0.7rem gray label, truncated with ellipsis
-│ 22.673 °            1.3rem bold value + unit suffix
+│ GPS Latitude        0.72rem #888 label, ellipsis overflow
+│ 22.673 °            1.3rem weight 600 value + unit suffix
 └─────────────────────────┘
 ```
 
 - Grid: `repeat(auto-fill, minmax(180px, 1fr))`, gap 12px
 - Hover: `box-shadow: 0 4px 12px rgba(0,0,0,0.12)`, `translateY(-2px)`
-- Value formatting: `parseFloat(value).toFixed(3)` if numeric; raw string otherwise
-- Clicking a card in the live view opens `KpiDetail` for that key
+- Alert state: class `kpi-alert-amber` or `kpi-alert-red` added to root div
+- Clicking in live view → opens KpiDetail
+
+### Value formatting (`FormattedValue.jsx`)
+
+1. `parseUnit(unit, rawValue)` → `{ value: parsed, unit: displayUnit }`
+2. `parseFloat(parsed).toFixed(3)` if numeric; raw string otherwise
+3. Renders: `{formatted}<span class="kpi-unit"> {displayUnit}</span>`
 
 ---
 
-## 10. KPI Detail View (`KpiDetail`)
+## 11. KPI Detail View (`KpiDetail`)
 
-Full-page replacement for the live view. Shows a time-series table for one KPI.
+Full-page view replacing live view. Time-series table for one KPI.
 
-- Header: same navy bar, "Patronus — Live Telemetry"
-- Back button: returns to live view
-- Refresh button: re-fetches history
-- Title: resolved label + unit in parentheses
-- Sub-title: raw key string (e.g. `kff1006`)
-- Table: `#`, `Value`, `Time` columns
-  - # = 1-indexed row number
-  - Value = formatted with 3dp + unit
-  - Time = `new Date(receivedAt).toLocaleString()`
-- Data source: `getKpiHistory(history, kpiKey)` — all occurrences, oldest first
+- Title: resolved label + `(unit)`
+- Sub-title: raw key string
+- Table: `#`, `Value` (3dp + unit), `Time` (`toLocaleString()`)
+- Data: `getKpiHistory(history, kpiKey)` — all occurrences, oldest-first
 
 ---
 
-## 11. Map (`MapView`)
+## 12. Map (`MapView`)
 
 ### Structure
 
 ```
-<div class="map-wrapper">            ← position:relative, fills parent
-  <MapContainer />                   ← Leaflet map, fills wrapper
-    <TileLayer />                    ← OpenStreetMap tiles
-    <MapController />                ← Camera logic (no render)
-    <Polyline />                     ← Route path
-    <CircleMarker × n />             ← GPS pins
-  <Compass />                        ← SVG overlay, bottom-left, z-index 1001
-  <div class="map-mode-toggle" />   ← Toggle buttons, top-right, z-index 1001
+<div class="map-wrapper">           position:relative, fills parent
+  <MapContainer>                    Leaflet, fills wrapper
+    <TileLayer>                     OpenStreetMap tiles
+    <MapController>                 Camera logic (no DOM output)
+    <Polyline>                      Road-snapped route, #7c3aed, weight 4
+    <CircleMarker × n>              GPS breadcrumb pins
+  <Compass>                         SVG overlay, bottom-left, z-index 1001
+  <div.map-mode-toggle>             Full Route | Track, top-right, z-index 1001
 ```
 
-### Camera modes
+### Camera modes (`MapController`)
 
-Controlled by `mode` state: `'route'` (default) or `'track'`.
-
-**Full Route mode:** On every `points` change, `map.fitBounds(points, { padding: [32, 32] })`. Always shows all points. Zoom resets to fit.
-
-**Track mode:** On every `points` change, `map.panTo(points[points.length - 1])`. Only pans; user's zoom level is never modified.
-
-Toggle buttons: pill-style overlay, top-right of map. "Full Route" | "Track", active state = navy background.
+| Mode | Behaviour on each `points` change |
+|---|---|
+| `route` (default) | `map.fitBounds(points, { padding: [32,32] })` — always shows full route |
+| `track` | `map.panTo(points[last])` — pans only, never changes zoom |
 
 ### Route rendering
 
-- `points` = raw GPS `[lat, lng][]` (from getBreadcrumb or getPathPoints)
-- `useRoutedPath(points)` → `{ routed, loading }`
-- Display path: `routed.length > 0 ? routed : points`
-- Polyline: color `#7c3aed` (purple), weight 4, opacity 0.9 (0.4 while loading)
+- Raw points → `useRoutedPath(points)` → road-snapped `routed`
+- Display: `routed.length > 0 ? routed : points` (straight lines until OSRM responds)
+- Polyline: `color="#7c3aed"`, `weight=4`, `opacity: loading ? 0.4 : 0.9`
 
 ### OSRM road snapping (`useRoutedPath`)
 
@@ -417,196 +541,214 @@ Toggle buttons: pill-style overlay, top-right of map. "Full Route" | "Track", ac
 Endpoint: https://router.project-osrm.org/route/v1/driving/{coords}
           ?overview=full&geometries=geojson
 
-Coords format: lng,lat;lng,lat;...   (OSRM is lng-first, Leaflet is lat-first)
-Response: routes[0].geometry.coordinates → [[lng,lat], ...] → convert to [[lat,lng], ...]
+Coord format:  lng,lat;lng,lat;...  (OSRM=lng-first, Leaflet=lat-first — always swap)
+Response:      routes[0].geometry.coordinates → [[lng,lat]] → convert to [[lat,lng]]
 
-Chunking: max 100 coords per request, chunks overlap by 1 point for stitching
-Stitching: concat chunks, trim first point of each subsequent chunk
+Chunking:      100 coords/request max; chunks overlap by 1 point
+Stitching:     trim first point of each subsequent chunk result
 
-Debounce: 30 seconds from last points change
-  - First load (routed.length === 0 or points reset to []): fires IMMEDIATELY (delay = 0)
-  - Subsequent changes: 30 second debounce
-  - points reset to []: clears hasRouted flag so next non-empty fires immediately
+Debounce:
+  - hasRouted ref = false → delay = 0 (immediate, on first non-empty points)
+  - hasRouted ref = true  → delay = 30 000 ms
+  - points reset to []   → hasRouted = false (next non-empty fires immediately)
 
-Cancellation: AbortController per request
-  - New debounce timer cancels previous AbortController
-  - AbortError → keep existing route (no flash to straight lines)
-  - Other error → setLoading(false), keep existing route
+Cancellation:  AbortController per request; new timer aborts previous
+  AbortError → keep existing route silently
+  Other error → setLoading(false), keep existing route
 ```
 
 ### GPS pins
 
-- All history breadcrumb points rendered as `CircleMarker`
-- Last point (most recent): radius 7, color `#e74c3c` (red)
-- All other points: radius 4, color `#3498db` (blue)
+- Latest point (index n-1): radius 7, `#e74c3c` red
+- All others: radius 4, `#3498db` blue
 
 ### Compass overlay
 
-Position: `bottom: 28px, left: 10px`, `pointer-events: none`
+Position: `bottom: 28px, left: 10px`, `pointer-events: none`, `z-index: 1001`
 
-SVG compass (72×72):
-- Outer circle: white fill, 1.5px border, drop shadow
-- Cardinal ticks: 4 lines at N/S/E/W positions
-- Cardinal labels: N (bold), S, E, W
-- Needle group rotated by `heading` degrees:
-  - North half (red `#e74c3c`): triangle pointing up
-  - South half (gray `#bbb`): triangle pointing down
-- Center dot: `#333`, radius 3.5
-- Degree label below circle: `{Math.round(heading)}°`
+SVG (72×72):
+- Outer circle: white/92% opacity, `rgba(0,0,0,0.18)` 1.5px border, drop shadow
+- N/S/E/W tick marks + labels (N bold)
+- Needle `<g transform="rotate({heading}, 40, 40)">`:
+  - North half: red `#e74c3c` triangle pointing up
+  - South half: gray `#bbb` triangle pointing down
+- Center dot: `#333`, r=3.5
+- Degree badge below: `{Math.round(heading)}°`
 
-Heading source:
-- Live view: `parseFloat(extractKpiMap(history[0])['kff1007']) || 0`
-- Replay: `parseFloat(extractKpiMap(currentRecord)['kff1007']) || 0`
-
-Key `kff1007` = Heading (GPS), 0–360°, 0 = North.
+Heading source: `kff1007` (Heading GPS, 0–360°, 0=North)
+- Live: `extractKpiMap(history[0])['kff1007']`
+- Replay: `extractKpiMap(currentRecord)['kff1007']`
 
 ---
 
-## 12. Replay View (`ReplayPage`)
+## 13. Replay View (`ReplayPage`)
 
 ### Layout
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│ APP HEADER  "Patronus — Replay"  │ 🔖 🚗 📻(back to live)  │
-├────────────────────────────────────────────────────────────┤
-│ TRIP SELECTOR bar                                          │
-├────────────────────────────────────────────────────────────┤
-│ REPLAY HEADER (trip stats + current frame info)            │
-├────────────────────────────────────────────────────────────┤
-│ REPLAY CONTROLS (play/pause, scrubber, speed)              │
-├──────────────────────────┬─────────────────────────────────┤
-│  MAP                     │  KPI SECTION                    │
-│  (same as live)          │  (hero + tab bar + grid)        │
-└──────────────────────────┴─────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ APP HEADER  "Patronus — Replay"         🔖(dis) 🚗(dis) 📻Live │
+├────────────────────────────────────────────────────────────────┤
+│ TRIP SELECTOR  [Trips | Custom Range]  date pickers  trip chips │
+├────────────────────────────────────────────────────────────────┤
+│ REPLAY HEADER  Date  Start  End  Duration  Records  Frame  Time │
+├────────────────────────────────────────────────────────────────┤
+│ REPLAY CONTROLS  ▶/⏸  ──scrubber──  frame count  1× 2× 5× 10× 20× │
+├──────────────────────────┬─────────────────────────────────────┤
+│  MAP (same as live)      │  KPI SECTION (hero + tabs + grid)   │
+└──────────────────────────┴─────────────────────────────────────┘
 ```
-
-### Trip selection modes
-
-**Trips mode** (default):
-- Date range pickers (From / To), defaulting to last 7 days
-- Calls `GET /api/trips?start=...&end=...`
-- Returns array of detected trips (see server-side trip detection)
-- Each trip displayed as a chip: date, start time, duration, record count
-- Selecting a chip sets `selectedTrip` which drives `source`
-
-**Custom Range mode:**
-- `datetime-local` inputs for start and end
-- "Load" button commits the range to `activeCustom`
-- Source becomes `{ start: activeCustom.start, end: activeCustom.end }`
 
 ### Data streaming (`useReplayStream`)
 
 ```
-source: { start: ISO string, end: ISO string } | null
-
 On source change:
-  1. Reset records=[], total=0, frame=0, playing=false
-  2. Fetch first page: GET /api/obd2/history/paged?start=&end=&offset=0&limit=100
-  3. Store records, set total from response
+  Reset records=[], total=0, frame=0, playing=false
+  Fetch page 0: GET /api/obd2/history/paged?start&end&offset=0&limit=100
 
-Pre-fetch trigger:
-  When records.length - frame <= 25 AND nextOffset < total
-  → fetch next page, append to records
+Pre-fetch: when (records.length - frame) <= 25 AND nextOffset < total
+  → fetch next page, append
 
-Play timer:
-  setInterval(600ms / speed) → advance frame by 1
-  If frame would exceed records.length → stall (wait for pre-fetch)
-  If frame >= records.length - 1 AND nextOffset >= total → auto-stop
+Play timer: setInterval(600ms / speed) → frame++
+  Stall if frame >= records.length (buffer not yet arrived)
+  Auto-stop if frame >= records.length - 1 AND nextOffset >= total
 
 Seek: clamp to [0, records.length - 1]
-
-Speed multipliers: 1×, 2×, 5×, 10×, 20×
+Speed options: 1×, 2×, 5×, 10×, 20×
 ```
-
-### Replay Header stats
-
-Shown as labelled stat chips in a horizontal bar:
-- Date (trip start date)
-- Start time
-- End time
-- Duration (Xh Ym or Ym Ys)
-- Record count
-- Frame counter (current / total)
-- Current frame time
-- Elapsed since trip start
-
-### Replay Controls
-
-- **Play/Pause button:** circle button, `#1a1a2e`. Shows ▶, ⏸, ↺ (at end), or `…` (buffering frame 0)
-- **Scrubber:** `<input type="range">` min=0, max=total-1, value=frame. `accent-color: #1a1a2e`
-- **Frame counter:** `{frame+1} / {total}`
-- **Buffering indicator:** pulsing "buffering…" text in `#e67e22`
-- **Speed buttons:** 1× 2× 5× 10× 20×. Active = navy bg, white text
 
 ### Map in replay
 
 `mapPoints = getPathPoints(records.slice(0, frame + 1))`
 
-This grows the path as the frame advances — shows the trip being drawn in real time.
-
-Compass heading updates per frame from `currentRecord.kpis['kff1007']`.
+Path grows as frames advance — trip replays drawn in real-time.
 
 ---
 
-## 13. Server API Reference
+## 14. PWA Configuration
+
+### Manifest
+
+```json
+{
+  "name": "Patronus — Live Telemetry",
+  "short_name": "Patronus",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1a1a2e",
+  "background_color": "#1a1a2e",
+  "start_url": "/",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
+```
+
+### Service worker caching strategy
+
+| Asset type | Strategy | Details |
+|---|---|---|
+| Build assets (JS/CSS) | Cache-first, 1-year immutable | Vite content-hashes filenames; safe to cache forever |
+| `/api/*` routes | NetworkFirst | 8s timeout; falls back to cache if offline |
+| `index.html` | No-cache (`no-store`) | Always fetched fresh — ensures new deploys load immediately |
+
+### Install requirement
+
+PWA install prompt only appears on **HTTPS** (or `localhost`). LAN HTTP addresses (`http://192.168.x.x`) do not qualify as secure contexts — Chrome will not show the install banner. Test installation via the deployed Railway URL (HTTPS).
+
+### Icons
+
+Source: `frontend/public/icon.svg` — 1024×1024 dark navy gradient with glowing route path, ECG waveform, map pin, and car illustration. PNGs generated from the SVG via `sharp`.
+
+---
+
+## 15. Server API Reference
 
 All routes are prefixed `/api`.
 
 ### `GET /api/obd2/history`
-
-Returns: `OBD2Record[]` — latest 100 records, sorted `receivedAt` descending.
+Returns: `OBD2Record[]` — latest 100 records, `receivedAt` descending.
 
 ### `GET /api/obd2/history/paged`
-
-Params: `start`, `end` (ISO strings), `offset` (int), `limit` (int, max 500)
-Returns: `{ records: OBD2Record[], total: int, offset: int, limit: int }`
-
-Records sorted `receivedAt` ascending (oldest first). Used exclusively by replay streaming.
+Params: `start`, `end` (ISO), `offset` (int), `limit` (int, max 500)
+Returns: `{ records, total, offset, limit }` — records `receivedAt` ascending.
 
 ### `GET /api/trips`
+Params: `start`, `end` (ISO, defaults: last 7 days)
+Returns: `Trip[]` — newest first.
 
-Params: `start`, `end` (ISO strings, default last 7 days)
-Returns: `Trip[]`
-
-Trip detection algorithm (server-side):
-1. Fetch all `receivedAt` timestamps in the date range, sorted ascending
-2. Walk records; if gap between consecutive records > 3 hours → new trip
-3. Each trip: `{ tripId, startTime, endTime, recordCount, durationMs }`
-4. Returned newest first (`trips.reverse()`)
-5. `tripId` = `'trip_' + index` after reverse (positional, not durable)
+Trip detection: gap > 3 hours between consecutive `receivedAt` values = new trip.
+`tripId = 'trip_' + i` after reverse — positional, not durable.
 
 ### `GET /api/keys`
+Returns full `data.json` — all fields including `tab`, `unit`, `alerts`.
 
-Returns: `{ id, DeviceID, tab? }[]` — the full data.json contents.
+### Static file serving
+```js
+// Hashed assets — cache forever
+express.static('public', { maxAge: '1y', immutable: true, etag: false })
 
-### `GET /api/obd2` (write path, used by mobile app)
-
-Receives telemetry as query parameters. Broadcasts to WebSocket subscribers. Persists to MongoDB if the request comes from an allowed Android user-agent (Samsung SM- devices).
-
----
-
-## 14. KPI Key Reference (critical keys)
-
-| Key | Sensor | Tab | Notes |
-|---|---|---|---|
-| `kd` | Speed (OBD) | engine | km/h, integer in hero |
-| `kc` | Engine RPM | engine | integer in hero |
-| `k4` | Engine Load | engine | % |
-| `k43` | Engine Load (Abs) | engine | % |
-| `kff1226` | Horsepower | performance | hp, integer in hero |
-| `kff1225` | Torque | performance | Nm, integer in hero |
-| `kff1006` | GPS Latitude | gps | used for map pins and breadcrumb |
-| `kff1005` | GPS Longitude | gps | used for map pins and breadcrumb |
-| `kff1007` | Heading (GPS) | gps | 0–360°, drives compass needle |
-| `kff1001` | Speed (GPS) | gps | km/h |
-| `kff1010` | GPS Altitude | gps | metres |
-
-All values arrive as **strings** from the OBD adapter. Always `parseFloat()` before numeric use.
+// index.html — never cache
+res.set('Cache-Control', 'no-store')
+res.sendFile('public/index.html')
+```
 
 ---
 
-## 15. Component Dependency Tree
+## 16. KPI Key Reference
+
+| Key | Sensor | Tab | Unit | Alert |
+|---|---|---|---|---|
+| `kd` | Speed (OBD) | engine | km/h | amber ≥81, red ≥101 |
+| `kc` | Engine RPM | engine | — | amber ≥3001, red ≥5001 |
+| `k4` | Engine Load | engine | % | amber ≥80, red ≥95 |
+| `k43` | Engine Load (Abs) | engine | % | — |
+| `k5` | Coolant Temp | engine | °C | amber ≥95, red ≥100 |
+| `k5c` | Oil Temp | engine | °C | amber ≥100, red ≥120 |
+| `k70` | GPS Altitude ALT | gps | m | — |
+| `k73` | Exhaust Pressure | engine | kPa | — |
+| `k2f` | Fuel Level | fuel | % | amber ≤20, red ≤10 |
+| `kff1225` | Torque | performance | Nm | — |
+| `kff1226` | Horsepower | performance | hp | — |
+| `kff1005` | GPS Longitude | gps | — | — |
+| `kff1006` | GPS Latitude | gps | — | — |
+| `kff1007` | Heading (GPS) | gps | ° | — |
+| `kff1001` | Speed (GPS) | gps | km/h | — |
+| `kff1010` | GPS Altitude | gps | m | — |
+| `kff126a` | Distance to Empty | fuel | km | amber ≤400, red ≤200 |
+| `kff129a` | Device Battery Level | gps | % | amber ≤30, red ≤15 |
+| `kff12a4` | G-Force X (Lateral) | gps | G* | — |
+| `kff12a5` | G-Force Y (Vertical/Gravity) | gps | G* | — |
+| `kff12a6` | G-Force Z (Accel/Brake) | gps | G* | — |
+| `kff12ab` | G-Force Total (Vector Sum) | gps | G* | — |
+
+*G unit: raw value ÷ 100 by `UNIT_PARSERS['G']`. Display value is actual G-force.
+
+---
+
+## 17. Mobile Layout (≤768px)
+
+```css
+.landing        → flex-direction: column
+.map-section    → width: 100%, height: 240px
+.kpi-section    → overflow: visible
+.kpi-body       → flex-direction: row (tab bar stays vertical on left)
+.kpi-tab-bar    → flex-direction: column, 28×28px buttons
+.kpi-grid       → minmax(130px, 1fr), gap 6px
+.kpi-card       → padding: 8px 10px
+.kpi-card label → 0.62rem
+.kpi-card value → 1.05rem (alert values override to 1.5rem via higher specificity)
+.gauge svg      → max-width: 90px
+.stat-box       → padding: 6px 8px
+```
+
+Note on specificity: mobile overrides use `.kpi-card .kpi-value` (0-2-0). Alert value overrides use `.kpi-card.kpi-alert-{level} .kpi-value` (0-3-0) — two classes on same element — so alert sizes win on mobile too.
+
+---
+
+## 18. Component Dependency Tree
 
 ```
 App
@@ -614,42 +756,40 @@ App
 │   ├── MapView
 │   │   └── useRoutedPath (hook)
 │   ├── KpiHero
-│   ├── KpiCard
-│   │   └── FormattedValue
-│   └── InfoModal (Units & Names, Profile — currently disabled)
+│   ├── KpiCard → FormattedValue → parseUnit()
+│   └── InfoModal (disabled — future)
 ├── ReplayPage
-│   ├── TripSelector
-│   │   ├── TripsMode
-│   │   └── CustomRangeMode
+│   ├── TripSelector (TripsMode / CustomRangeMode)
 │   ├── ReplayHeader
 │   ├── ReplayControls
-│   ├── MapView
-│   │   └── useRoutedPath (hook)
+│   ├── MapView → useRoutedPath (hook)
 │   ├── KpiHero
-│   ├── KpiCard
-│   │   └── FormattedValue
-│   └── InfoModal (disabled)
-└── KpiDetail
-    └── FormattedValue
+│   └── KpiCard → FormattedValue → parseUnit()
+└── KpiDetail → FormattedValue
 
 Hooks
-├── useReplayStream   ← paged streaming + pre-fetch + play timer
-├── useTrips          ← trip list fetch with date range state
-├── useRoutedPath     ← OSRM snapping with debounce + abort
-└── useReplay         ← (legacy simple replay, superseded by useReplayStream)
+├── useReplayStream   paged streaming, pre-fetch, play timer
+├── useTrips          trip list fetch with date range state
+├── useRoutedPath     OSRM debounce + AbortController
+└── useReplay         (legacy, superseded by useReplayStream)
 ```
 
 ---
 
-## 16. Critical Implementation Rules
+## 19. Critical Implementation Rules
 
-1. **Values are always strings.** Never assume numeric type from the database.
-2. **KPI keys are lowercase hex-ish strings.** `kd`, `kc`, `kff1006` etc. Case-sensitive.
-3. **History is newest-first.** Reverse before displaying time-series oldest-to-newest.
-4. **`receivedAt` is the canonical timestamp** — not the `time` field from the OBD device (which is a Unix ms string and may be unreliable).
-5. **Tab filtering uses `tabMap[key] === activeTab`.** If `tabMap` is empty (backend not restarted after data.json change), all tabs appear empty. Restart the backend.
-6. **OSRM coords are lng,lat; Leaflet is lat,lng.** Always swap when converting between the two.
-7. **`useRoutedPath` fires immediately on first non-empty points**, then debounces 30s. Do not call OSRM on every poll.
-8. **Sticky hero tiles** use a ref, not state. The component renders with the last known value grayed out if the current frame/poll doesn't contain that key.
-9. **Trip IDs are positional** (`trip_0` = newest trip). They change if new trips are added. Do not persist them.
-10. **The `session` field in OBD records** is a number set by the Android app to group records into a logical trip. It is separate from the server-detected `tripId`.
+1. **Values are always strings.** Never assume numeric type from MongoDB.
+2. **KPI keys are lowercase hex-ish strings** (`kd`, `kc`, `kff1006`). Case-sensitive.
+3. **History is newest-first.** Reverse before rendering time-series charts.
+4. **`receivedAt` is the canonical timestamp** — not the `time` field (OBD Unix ms string, unreliable).
+5. **Tab filtering:** `tabMap[key] === activeTab` for named tabs; `!tabMap[key]` for Misc. Empty `tabMap` means the backend hasn't restarted after a data.json change — restart it.
+6. **OSRM coords are lng,lat; Leaflet is lat,lng.** Always swap at the API boundary.
+7. **`useRoutedPath` fires immediately on first non-empty points** then debounces 30s. Never call OSRM on every poll.
+8. **AbortController cancels in-flight OSRM requests.** On AbortError, keep the existing route — no flash to straight lines.
+9. **Sticky hero tiles use a ref, not state.** Stale values show grayed out; components do not re-render solely due to the cache update.
+10. **Alert specificity rule:** Use `.kpi-card.kpi-alert-{level} .kpi-value` (0-3-0) not `.kpi-alert-{level} .kpi-value` (0-2-0) to beat mobile CSS overrides.
+11. **G-force unit parser:** 100 = 1G. Always divide raw value by 100 before display. Register as `UNIT_PARSERS['G']`.
+12. **Trip IDs are positional** (`trip_0` = newest). They change as new trips are added. Never persist them.
+13. **PWA install requires HTTPS.** LAN IP over HTTP will not trigger the browser's install prompt. Deploy to Railway (HTTPS) to test installation.
+14. **index.html must never be cached.** Serve with `Cache-Control: no-store`. Hashed JS/CSS assets can and should be cached with `immutable, max-age=1y`.
+15. **`staticUnitMap` is the last fallback for units** — below OBD device metadata. Use it for sensors whose units are known statically (exhaust pressure, G-force, battery %) but not always sent by the device.

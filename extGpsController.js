@@ -40,19 +40,21 @@ const persistGps = async (sync_ts, data) => {
 
 const persistObd = async (doc) => {
     const sync_ts = tsSync(Number(doc.time));
-    const payload = {
+    const alwaysSet = {
         email:         doc.email,
         v:             doc.v,
         session:       doc.session,
         id:            doc.id,
         time:          doc.time,
-        kpis:          doc.kpis,
         obdReceivedAt: new Date()
     };
+    const update = doc.kpis && doc.kpis.length > 0
+        ? { $set: { ...alwaysSet, kpis: doc.kpis } }
+        : { $set: alwaysSet };
     await connect();
     const result = await ObdWithExtGps.updateOne(
         { sync_ts, email: doc.email },
-        { $set: payload },
+        update,
         { upsert: true }
     );
     console.log(`OBD upsert [${sync_ts}]:`, result);
