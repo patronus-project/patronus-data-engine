@@ -1,14 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Rewind, CircleHelp, Satellite } from 'lucide-react'
+import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, CircleHelp, Satellite, Clock } from 'lucide-react'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
-import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs } from './utils'
+import AutoRefreshBar from './AutoRefreshBar'
+import HeaderActions from './HeaderActions'
+import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs, getTelemetryStatus, getElapsedParts } from './utils'
 import KpiHero from './KpiHero'
-
-function fmt(date) {
-  return date ? date.toLocaleTimeString() : '—'
-}
 
 
 function NamesModal({ kpiMeta, onClose }) {
@@ -64,7 +62,7 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc',
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
 
-export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
 
   const extBreadcrumb = useMemo(() => getExtBreadcrumb(history, extMap), [history, extMap])
@@ -85,6 +83,18 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
   const [modal, setModal] = useState(null)
   const [activeTab, setActiveTab] = useState('fuel')
 
+  // Ticks every second so the next-refresh countdown and live elapsed counter update in real time
+  // (starts at 0 and self-corrects on the first interval tick, ~1s after mount)
+  const [nowTick, setNowTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const telemetryStatus = useMemo(() => getTelemetryStatus(lastData, nowTick), [lastData, nowTick])
+
+  const lastDataAgeMs = lastData ? nowTick - lastData.getTime() : null
+
   const extGpsEntries = useMemo(() => {
     if (!history.length || !history[0].time) return []
     const syncTs = getExtSyncTs(history[0].time)
@@ -93,27 +103,13 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
     return Object.entries(extGps).filter(([k]) => k !== 'ts')
   }, [history, extMap])
 
-  useEffect(() => {
-    const id = setInterval(onRefresh, 10000)
-    return () => clearInterval(id)
-  }, [onRefresh])
-
   return (
     <div className="page-wrapper">
       <div className="app-header">
         <span>Patronus — Live Telemetry</span>
         <div className="ts-bar">
-          <span>Refreshed: {fmt(lastRefresh)}</span>
-          <span>Last data: {fmt(lastData)}</span>
-          <button className="header-action-btn" disabled title="Units &amp; Names"><BookOpen size={15} /></button>
-          <button className="header-action-btn" disabled title="Vehicle Profile"><Car size={15} /></button>
-          <button
-            className="header-action-btn"
-            onClick={onToggleObdOverride}
-            title={forceObd ? 'Forced OBD GPS — click to let smart logic decide' : 'Smart GPS active — click to force OBD'}
-            style={forceObd ? { background: '#e67e22', borderColor: '#e67e22' } : {}}
-          ><Satellite size={15} /></button>
-          <button className="header-action-btn" onClick={onReplay} title="Replay" style={{ background: '#e74c3c', borderColor: '#e74c3c' }}><Rewind size={15} fill="#fff" stroke="#fff" /></button>
+          <AutoRefreshBar onRefresh={onRefresh} status={telemetryStatus.status} />
+          <HeaderActions forceObd={forceObd} onToggleObdOverride={onToggleObdOverride} onReplay={onReplay} />
         </div>
       </div>
       {gpsWarning && (
@@ -121,6 +117,11 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
           <Satellite size={13} /> {gpsWarning}
         </div>
       )}
+      {telemetryStatus.status === 'no-trips' ? (
+        <div className="live-empty">
+          <p>No live trips — last telemetry point is over 72 hours old.</p>
+        </div>
+      ) : (
       <div className="landing">
         <div className="map-section">
           <MapView points={breadcrumb} heading={heading} />
@@ -133,7 +134,27 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
             <p className="no-data">No KPI data in history.</p>
           ) : (
             <>
-              <div className="kpi-hero-pad"><KpiHero kvm={kvm} /></div>
+              <div className="kpi-hero-pad">
+                <KpiHero kvm={kvm} />
+                {telemetryStatus.message && (
+                  <div className={`telemetry-stale-toast-big ${telemetryStatus.status}`}>
+                    <div className="timer-block" role="timer" aria-live="polite" aria-atomic="true">
+                      <span className="timer-caption">Last data</span>
+                      <div className="timer-segments">
+                        {getElapsedParts(lastDataAgeMs).map(({ unit, label, display }) => (
+                          <span className="timer-segment" key={unit}>
+                            <span className="timer-value">{display}</span>
+                            <span className="timer-unit">{label}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="stale-toast-msg">
+                      <Clock size={18} /> {telemetryStatus.message}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="kpi-body">
                 <div className="kpi-tab-bar">
                   {TABS.map(t => (
@@ -177,6 +198,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
           )}
         </div>
       </div>
+      )}
       {modal === 'names' && <NamesModal kpiMeta={kpiMeta} onClose={() => setModal(null)} />}
       {modal === 'profile' && <ProfileModal profileData={profileData} onClose={() => setModal(null)} />}
     </div>

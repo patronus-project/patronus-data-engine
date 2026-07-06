@@ -25,6 +25,130 @@
 .map-source-badge.ext { background: #c0392b; color: #fff; }
 .map-source-badge.obd { background: #1a5e30; color: #fff; }
 
+.telemetry-stale-toast-big {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 18px 20px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.stale-toast-msg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.timer-block {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.timer-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.25;
+  text-align: center;
+  opacity: 0.75;
+}
+.timer-segments {
+  display: flex;
+  gap: 6px;
+}
+.timer-segment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 42px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.08);
+}
+.timer-value {
+  font-family: monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.timer-unit {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.7;
+}
+
+/* Outer chip for the countdown — sized to match .header-action-btn's height so it sits
+   evenly in the same row; border color mirrors the tube digits' glow color */
+.refresh-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 29px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1.5px solid #ff5a36;
+  border-radius: 6px;
+}
+.refresh-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #ff8f7a;
+  white-space: nowrap;
+}
+
+/* Nixie-tube style countdown digits — one glass tube per digit, scaled to fit inside .refresh-box */
+.timer-tubes {
+  display: flex;
+  gap: 2px;
+}
+.timer-tube {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 22px;
+  border-radius: 3px;
+  background: #180404;
+  border: 1px solid rgba(255, 90, 60, 0.35);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.7);
+  font-family: monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ff5a36;
+  text-shadow: 0 0 3px rgba(255, 90, 54, 0.9), 0 0 8px rgba(255, 61, 34, 0.6), 0 0 12px rgba(255, 61, 34, 0.35);
+}
+.telemetry-stale-toast-big.stale-short { background: #fde68a; color: #78350f; }
+.telemetry-stale-toast-big.stale-long  { background: #fee2e2; color: #7f1d1d; }
+
+.live-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-style: italic;
+  font-size: 1rem;
+}
+
 .ext-active-toast {
   display: flex;
   align-items: center;
@@ -48,11 +172,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 16px;
+  width: 100%;
+  padding: 9px 16px;
   background: #7d4a00;
   color: #ffd580;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 500;
+  border-top: 1px solid #9b5f04;
+  border-bottom: 1px solid #9b5f04;
 }
 
 .app-header {
@@ -202,7 +329,11 @@
   .kpi-grid-area { overflow-y: visible; padding: 8px; }
 
   /* Hero: tighter on small screens */
-  .kpi-hero { gap: 6px; }
+  .kpi-hero {
+    gap: 6px;
+    grid-template-columns: 1fr 1fr 1.2fr;
+  }
+  .gauge-wrap.desktop-only { display: none; }
   .gauge-wrap svg { max-width: 90px !important; }
   .gauge-label { font-size: 0.6rem; }
   .stat-boxes { gap: 5px; }
@@ -363,8 +494,8 @@
 /* ── KPI Hero section ── */
 .kpi-hero {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(74px, 0.72fr) minmax(74px, 0.72fr) minmax(74px, 0.72fr) minmax(280px, 1.7fr);
+  gap: 4px;
   align-items: center;
   padding-bottom: 16px;
   margin-bottom: 16px;
@@ -375,27 +506,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
 }
 
+.gauge-wrap svg { max-width: 92px !important; }
+
 .gauge-label {
-  font-size: 0.68rem;
+  font-size: 0.58rem;
   color: #aaa;
-  margin-top: 2px;
+  margin-top: 0;
   text-align: center;
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 
 .stat-boxes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 .stat-box {
   background: #f5f6fa;
   border: 1px solid #e4e6f0;
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -410,7 +544,7 @@
 }
 
 .stat-box-value {
-  font-size: 1.35rem;
+  font-size: 1.22rem;
   font-weight: 700;
   color: #1a1a2e;
   line-height: 1.1;

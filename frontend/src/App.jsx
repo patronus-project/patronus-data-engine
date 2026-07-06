@@ -20,16 +20,17 @@ export default function App() {
   const [view, setView] = useState('live') // 'live' | 'replay'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [lastRefresh, setLastRefresh] = useState(null)
 
   const extMap = useMemo(() => buildExtMap(extHistory), [extHistory])
   const [forceObd, toggleObdOverride] = useExtGpsToggle()
   const evaluator = useGpsEvaluator(history, extMap)
   const activeSource = forceObd ? 'torque' : evaluator.source
-  const gpsWarning = forceObd && evaluator.reason === 'torque-frozen'
-    ? 'OBD GPS is frozen — consider disabling the OBD override'
-    : !forceObd && evaluator.reason === 'ext-frozen'
-    ? 'Ext GPS is frozen — switching to OBD GPS'
+  const gpsWarning = evaluator.reason === 'both-unavailable'
+    ? 'GPS reliability issue: Ext GPS missing and OBD GPS appears frozen — using OBD fallback'
+    : forceObd && (evaluator.reason === 'torque-frozen' || evaluator.reason === 'torque-no-data')
+    ? 'OBD GPS is unavailable/frozen — consider disabling the OBD override'
+    : !forceObd && (evaluator.reason === 'ext-frozen' || evaluator.reason === 'ext-no-data' || evaluator.reason === 'ext-no-speed-samples')
+    ? 'Ext GPS is unavailable/frozen — switching to OBD GPS'
     : null
 
   const fetchData = useCallback(() => {
@@ -54,7 +55,6 @@ export default function App() {
         setTabMap(tmap)
         setStaticUnitMap(umap)
         setAlertMap(amap)
-        setLastRefresh(new Date())
         setLoading(false)
       })
       .catch(err => {
@@ -87,5 +87,5 @@ export default function App() {
 
   const lastData = history.length > 0 ? new Date(history[0].receivedAt) : null
 
-  return <LandingPage history={history} extMap={extMap} activeSource={activeSource} forceObd={forceObd} onToggleObdOverride={toggleObdOverride} gpsWarning={gpsWarning} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastRefresh={lastRefresh} lastData={lastData} onReplay={() => setView('replay')} />
+  return <LandingPage history={history} extMap={extMap} activeSource={activeSource} forceObd={forceObd} onToggleObdOverride={toggleObdOverride} gpsWarning={gpsWarning} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastData={lastData} onReplay={() => setView('replay')} />
 }

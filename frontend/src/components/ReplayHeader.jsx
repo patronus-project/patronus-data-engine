@@ -1,12 +1,10 @@
+import { formatDateShort, formatTimeShort } from './utils'
+
 function fmtDuration(ms) {
   const h = Math.floor(ms / 3600000)
   const m = Math.floor((ms % 3600000) / 60000)
   const s = Math.floor((ms % 60000) / 1000)
   return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`
-}
-
-function fmtTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function Stat({ label, value }) {
@@ -26,14 +24,15 @@ export default function ReplayHeader({ trip, frame, total, currentRecord }) {
 
   return (
     <div className="replay-header">
-      <Stat label="Date" value={trip.startTime.toLocaleDateString()} />
-      <Stat label="Start" value={fmtTime(trip.startTime)} />
-      <Stat label="End" value={fmtTime(trip.endTime)} />
+      <Stat label="Start Date" value={formatDateShort(trip.startTime)} />
+      <Stat label="Start Time" value={formatTimeShort(trip.startTime)} />
+      <Stat label="End Date" value={formatDateShort(trip.endTime)} />
+      <Stat label="End Time" value={formatTimeShort(trip.endTime)} />
       <Stat label="Duration" value={fmtDuration(trip.durationMs)} />
       <Stat label="Records" value={trip.recordCount} />
       <div className="rh-divider" />
       <Stat label="Frame" value={`${frame + 1} / ${total}`} />
-      {frameTime && <Stat label="Time" value={fmtTime(frameTime)} />}
+      {frameTime && <Stat label="Time" value={formatTimeShort(frameTime)} />}
       {elapsed > 0 && <Stat label="Elapsed" value={fmtDuration(elapsed)} />}
     </div>
   )

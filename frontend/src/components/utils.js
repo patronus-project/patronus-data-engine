@@ -1,7 +1,7 @@
-// ── Unit parser registry ───────────────────────────────────────────────────
+// ── Static config / constants ──────────────────────────────────────────────
+
 // Each entry: unitString → (rawValue: string) => { value: string, unit: string }
 // parseUnit() calls the mapped parser or returns the raw value unchanged.
-
 const UNIT_PARSERS = {
   // Torque Pro encodes G-force as integer*100 (100 = 1.00 G)
   'G': raw => {
@@ -11,6 +11,42 @@ const UNIT_PARSERS = {
       : { value: (n / 100).toFixed(3), unit: 'G' }
   },
 }
+
+const META_PREFIXES = ['defaultUnit', 'userUnit', 'userShortName', 'userFullName', 'profile']
+
+const ELAPSED_UNIT_LABELS = { D: 'days', H: 'hrs', M: 'min', S: 'sec' }
+
+// Live telemetry staleness thresholds
+let LIVE_THRESHOLD_MS_MAX        = 30 * 60 * 1000
+let SHORT_BREAK_THRESHOLD_MS_MAX = 4 * 60 * 60 * 1000
+let LONG_BREAK_THRESHOLD_MS_MAX  = 3 * 24 * 60 * 60 * 1000
+
+  // SHORT_BREAK_THRESHOLD_MS_MAX = LONG_BREAK_THRESHOLD_MS_MAX;
+
+// ── Internal helpers ────────────────────────────────────────────────────────
+
+function isMetaKey(key) {
+  return META_PREFIXES.some(p => key.startsWith(p))
+}
+
+// Strip leading 'k' from data keys (e.g. 'kff1221' → 'ff1221') to get sensor ID
+function sensorId(dataKey) {
+  return dataKey.startsWith('k') ? dataKey.slice(1) : dataKey
+}
+
+// For scalar or single-element arrays: return as-is.
+// For label arrays: skip ECU-prefixed entries (e.g. "ECU(7E9): ...") which can appear in any slot.
+function firstOf(val) {
+  return Array.isArray(val) ? val[0] : val
+}
+
+function bestLabel(val) {
+  if (!Array.isArray(val)) return val
+  const clean = val.find(v => typeof v === 'string' && !v.startsWith('ECU('))
+  return clean ?? val[0]
+}
+
+// ── Exported functions ──────────────────────────────────────────────────────
 
 // Returns 'red' | 'amber' | null based on alertMap config for a KPI key
 export function getAlertLevel(kpiKey, rawValue, alertMap) {
@@ -34,30 +70,6 @@ export function parseUnit(unit, rawValue) {
   const parser = UNIT_PARSERS[unit]
   if (!parser) return { value: rawValue, unit }
   return parser(rawValue)
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-const META_PREFIXES = ['defaultUnit', 'userUnit', 'userShortName', 'userFullName', 'profile']
-
-function isMetaKey(key) {
-  return META_PREFIXES.some(p => key.startsWith(p))
-}
-
-// Strip leading 'k' from data keys (e.g. 'kff1221' → 'ff1221') to get sensor ID
-function sensorId(dataKey) {
-  return dataKey.startsWith('k') ? dataKey.slice(1) : dataKey
-}
-
-// For scalar or single-element arrays: return as-is.
-// For label arrays: skip ECU-prefixed entries (e.g. "ECU(7E9): ...") which can appear in any slot.
-function firstOf(val) {
-  return Array.isArray(val) ? val[0] : val
-}
-
-function bestLabel(val) {
-  if (!Array.isArray(val)) return val
-  const clean = val.find(v => typeof v === 'string' && !v.startsWith('ECU('))
-  return clean ?? val[0]
 }
 
 // Takes oldest-first records, returns lat/lng path points (every 10th or fewer)
@@ -217,6 +229,63 @@ export function getKpiHistory(history, kpiKey) {
     }
   })
   return result
+}
+
+// Classifies how stale the last telemetry point is.
+// lastData: Date | null (timestamp of most recent received record)
+// Returns { status: 'live' | 'stale-short' | 'stale-long' | 'no-trips', message? }
+export const getTelemetryStatus = (lastData, now = Date.now()) => {
+  if (!lastData) return { status: 'no-trips' }
+  const ageMs = now - lastData.getTime()
+  // return { status: 'no-trips', message: 'Driver is potentially on a long break or an overnight stop or offline' }
+  if (ageMs <= LIVE_THRESHOLD_MS_MAX) return { status: 'live' }
+  if (ageMs > LIVE_THRESHOLD_MS_MAX && ageMs <= SHORT_BREAK_THRESHOLD_MS_MAX) return { status: 'stale-short', message: 'Driver is potentially resting or offline' }
+  if (ageMs > SHORT_BREAK_THRESHOLD_MS_MAX && ageMs <= LONG_BREAK_THRESHOLD_MS_MAX) return { status: 'stale-long', message: 'Driver is potentially on a long break or an overnight stop or offline' }
+  if (ageMs > LONG_BREAK_THRESHOLD_MS_MAX) return { status: 'no-trips' }
+}
+
+// Shared date/time formatters — 'DD-MON-YY' and 'HH:MM:SS'
+export const formatDateShort = (date) => {
+  if (!date) return '—'
+  const day = String(date.getDate()).padStart(2, '0')
+  const mon = date.toLocaleDateString([], { month: 'short' })
+  const yr = String(date.getFullYear()).slice(-2)
+  return `${day}-${mon}-${yr}`
+}
+
+export const formatTimeShort = (date) => {
+  if (!date) return '—'
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+// Breaks a duration in ms into { unit, label, display } parts (D/H/M/S), zero-padded.
+// Leading zero units are trimmed (e.g. 0 days omitted), but once the leading unit is
+// found, every unit below it is kept even if zero — 1m 0s, not just 1m.
+export const getElapsedParts = (ms) => {
+  const pad = (n) => String(n).padStart(2, '0')
+  const safeMs = ms == null || ms < 0 ? 0 : ms
+  const days = Math.floor(safeMs / 86400000)
+  const hours = Math.floor((safeMs % 86400000) / 3600000)
+  const minutes = Math.floor((safeMs % 3600000) / 60000)
+  const seconds = Math.floor((safeMs % 60000) / 1000)
+  const all = [
+    { unit: 'D', value: days },
+    { unit: 'H', value: hours },
+    { unit: 'M', value: minutes },
+    { unit: 'S', value: seconds },
+  ]
+  const leadingIndex = all.findIndex(p => p.value > 0)
+  const parts = leadingIndex === -1 ? [all[all.length - 1]] : all.slice(leadingIndex)
+  return parts.map(p => ({ unit: p.unit, label: ELAPSED_UNIT_LABELS[p.unit], display: pad(p.value) }))
+}
+
+// Splits a number into individual zero-padded digit characters, e.g. for a nixie-tube
+// style display. Always at least `minDigits` wide, but grows if the value needs more
+// (e.g. 9 -> ['0','9'], 123 -> ['1','2','3'] when minDigits is 2).
+export const getDigitSegments = (value, minDigits = 2) => {
+  const n = Math.max(0, Math.floor(value ?? 0))
+  const digitCount = Math.max(String(n).length, minDigits)
+  return String(n).padStart(digitCount, '0').split('')
 }
 
 // Extracts vehicle profile fields from history (first occurrence wins)
