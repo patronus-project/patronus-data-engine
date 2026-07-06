@@ -62,11 +62,15 @@ export default function KpiHero({ kvm }) {
 
   const speed = resolve('kd')
   const rpm   = resolve('kc')
+  const gpsSpeed = resolve('kff1001')
 
   return (
     <div className="kpi-hero">
-      <GaugeDial label="Speed (OBD)" value={speed.stale ? 0 : (speed.value === '—' ? 0 : speed.value)} max={200}  unit="km/h" color="#3498db" />
       <GaugeDial label="Engine RPM"  value={rpm.stale   ? 0 : (rpm.value   === '—' ? 0 : rpm.value)}   max={8000} unit="RPM"  color="#e67e22" />
+      <div className="gauge-wrap desktop-only">
+        <GaugeDial label="Speed (GPS)" value={gpsSpeed.stale ? 0 : (gpsSpeed.value === '—' ? 0 : gpsSpeed.value)} max={200} unit="km/h" color="#27ae60" />
+      </div>
+      <GaugeDial label="Speed (OBD)" value={speed.stale ? 0 : (speed.value === '—' ? 0 : speed.value)} max={200} unit="km/h" color="#3498db" />
       <div className="stat-boxes">
         {tiles.map(({ label, key, unit }) => {
           const { value, stale } = resolve(key)

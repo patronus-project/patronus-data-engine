@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio, CircleHelp, Satellite } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
@@ -73,14 +73,62 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     () => Object.entries(stickyKpis).map(([key, { value, stale }]) => ({ key, value, stale })),
     [stickyKpis]
   )
-  useEffect(() => {
-    if (!source) { setExtMap(new Map()); return }
-    const params = new URLSearchParams({ start: source.start, end: source.end, limit: 500 })
+
+  const extNextOffsetRef = useRef(0)
+  const extFetchingRef = useRef(false)
+  
+  const fetchExtPage = useCallback((src, offset) => {
+    const params = new URLSearchParams({
+      start: src.start,
+      end: src.end,
+      offset,
+      limit: 100,
+    })
+    if (extFetchingRef.current) return // already fetching, skip
+    extFetchingRef.current = true
     fetch(`/api/obd2/ext-history/paged?${params}`)
       .then(r => r.json())
-      .then(data => setExtMap(buildExtMap(data.records)))
+      .then(data => {
+        setExtMap(prev => {
+          const updated = new Map(prev)
+          data.records.forEach(rec => {
+            updated.set(rec.sync_ts, rec)
+          })
+          return updated
+        })
+        extNextOffsetRef.current = offset + data.records.length
+      })
       .catch(() => {})
-  }, [sourceKey])
+      .finally(() => { extFetchingRef.current = false })
+  }, [])
+  
+
+  // Fetch ext-history when source changes
+  useEffect(() => {
+    if (!source) {
+      setExtMap(new Map())
+      extNextOffsetRef.current = 0
+      extFetchingRef.current = false
+      return
+    }
+    extNextOffsetRef.current = 0
+    extFetchingRef.current = false
+    fetchExtPage(source, 0)
+  }, [sourceKey, fetchExtPage])
+
+  // Prefetch next ext page when buffer is growing — keep ext-history in sync with OBD pages
+  useEffect(() => {
+    if (!source || records.length === 0) return
+    
+    const OBD_PAGE_SIZE = 100 // must match useReplayStream PAGE_SIZE
+    const numLoadedOBDPages = Math.floor(records.length / OBD_PAGE_SIZE)
+    const targetExtOffset = numLoadedOBDPages * OBD_PAGE_SIZE
+    
+    // Fetch next ext page if OBD has loaded more pages than ext
+    if (extNextOffsetRef.current < targetExtOffset) {
+      fetchExtPage(source, extNextOffsetRef.current)
+    }
+  }, [records.length, source, fetchExtPage])
 
   const extGpsEntries = useMemo(() => {
     if (!currentRecord?.time) return []

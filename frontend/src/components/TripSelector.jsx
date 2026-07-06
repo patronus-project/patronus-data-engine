@@ -37,8 +37,8 @@ function TripsMode({ trips, loading, selectedTripId, onSelect, dateFrom, dateTo,
             className={`trip-chip${trip.tripId === selectedTripId ? ' active' : ''}`}
             onClick={() => onSelect(trip)}
           >
-            <span className="trip-chip-date">{fmtDate(trip.startTime)}</span>
-            <span className="trip-chip-time">{fmtTime(trip.startTime)}</span>
+            <span className="trip-chip-date">{fmtDate(trip.startTime)} {fmtTime(trip.startTime)}</span>
+            <span className="trip-chip-date">{fmtDate(trip.endTime)} {fmtTime(trip.endTime)}</span>
             <span className="trip-chip-meta">{fmtDuration(trip.durationMs)} · {trip.recordCount} pts</span>
           </button>
         ))}

@@ -10,7 +10,7 @@ const EXT_MS_TO_KMH      = 3.6   // mendhak sends m/s
 const STALE_THRESHOLD    = 3      // consecutive frozen coords → stream is stale
 const MOVING_KMH         = 5     // ignore records below this speed
 const WINDOW_MS          = 30000
-const EVAL_INTERVAL_MS   = 30000
+const EVAL_INTERVAL_MS   = 5000
 
 function stdDev(arr) {
   if (arr.length < 2) return Infinity
@@ -47,6 +47,9 @@ function evaluateGps(records, extMap, currentSource) {
     }
   })
 
+  const hasTorqueSamples = frames.some(f => !isNaN(f.tLat) && !isNaN(f.tLon))
+  const hasExtSamples = frames.some(f => !isNaN(f.eLat) && !isNaN(f.eLon))
+
   // ── Phase 1: Stagnation filter ──────────────────────────────────────────
   let tStale = 0, eStale = 0, movingCount = 0
   for (let i = 1; i < frames.length; i++) {
@@ -60,6 +63,9 @@ function evaluateGps(records, extMap, currentSource) {
   if (movingCount >= STALE_THRESHOLD) {
     const tFrozen = tStale >= STALE_THRESHOLD
     const eFrozen = eStale >= STALE_THRESHOLD
+    if ((!hasExtSamples || eFrozen) && (!hasTorqueSamples || tFrozen)) {
+      return { source: 'torque', reason: 'both-unavailable' }
+    }
     if (tFrozen && !eFrozen) return { source: 'ext',    reason: 'torque-frozen' }
     if (eFrozen && !tFrozen) return { source: 'torque', reason: 'ext-frozen' }
   }
@@ -70,6 +76,24 @@ function evaluateGps(records, extMap, currentSource) {
     if (isNaN(f.obdSpeed) || f.obdSpeed <= MOVING_KMH) continue
     if (!isNaN(f.tSpd)) torqueDeltas.push(f.obdSpeed - f.tSpd)
     if (!isNaN(f.eSpd)) extDeltas.push(f.obdSpeed - f.eSpd)
+  }
+
+  if (torqueDeltas.length === 0 && extDeltas.length === 0) {
+    // No speed evidence from either stream; keep UI stable by falling back to OBD.
+    if ((!hasExtSamples && !hasTorqueSamples) || (!hasExtSamples && hasTorqueSamples)) {
+      return { source: 'torque', reason: 'ext-no-data' }
+    }
+    if (!hasTorqueSamples && hasExtSamples) {
+      return { source: 'ext', reason: 'torque-no-data' }
+    }
+    return { source: currentSource, reason: 'no-speed-samples' }
+  }
+
+  if (torqueDeltas.length === 0 && extDeltas.length > 0) {
+    return { source: 'ext', reason: 'torque-no-speed-samples' }
+  }
+  if (extDeltas.length === 0 && torqueDeltas.length > 0) {
+    return { source: 'torque', reason: 'ext-no-speed-samples' }
   }
 
   const tSd = stdDev(torqueDeltas)
@@ -85,8 +109,8 @@ function evaluateGps(records, extMap, currentSource) {
 export function useGpsEvaluator(records, extMap) {
   const recordsRef = useRef(records)
   const extMapRef  = useRef(extMap)
-  const currentRef = useRef('ext')
-  const [result, setResult] = useState({ source: 'ext', reason: 'init' })
+  const currentRef = useRef('torque')
+  const [result, setResult] = useState({ source: 'torque', reason: 'init' })
 
   useEffect(() => { recordsRef.current = records }, [records])
   useEffect(() => { extMapRef.current  = extMap  }, [extMap])
