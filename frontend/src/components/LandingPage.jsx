@@ -62,13 +62,14 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc',
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
 
-export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, extMap, activeSource, forceObd, forceExt, onToggleObdOverride, onToggleExtOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
 
   const extBreadcrumb = useMemo(() => getExtBreadcrumb(history, extMap), [history, extMap])
   const obdBreadcrumb = useMemo(() => getBreadcrumb(history), [history])
-  const breadcrumb      = activeSource === 'ext' && extBreadcrumb.length > 0 ? extBreadcrumb : obdBreadcrumb
-  const displayedSource = activeSource === 'ext' && extBreadcrumb.length > 0 ? 'ext' : 'obd'
+  const useExtGps = activeSource === 'ext' && (forceExt || extBreadcrumb.length > 0)
+  const breadcrumb = useExtGps ? extBreadcrumb : obdBreadcrumb
+  const displayedSource = useExtGps ? 'ext' : 'obd'
 
   const heading = useMemo(() => {
     if (displayedSource === 'ext' && history.length > 0) {
@@ -108,7 +109,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
         <span>Patronus — Live Telemetry</span>
         <div className="ts-bar">
           <AutoRefreshBar onRefresh={onRefresh} status={telemetryStatus.status} />
-          <HeaderActions forceObd={forceObd} onToggleObdOverride={onToggleObdOverride} onReplay={onReplay} />
+          <HeaderActions forceObd={forceObd} forceExt={forceExt} onToggleObdOverride={onToggleObdOverride} onToggleExtOverride={onToggleExtOverride} onReplay={onReplay} />
         </div>
       </div>
       {gpsWarning && (
