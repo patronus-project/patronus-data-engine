@@ -7,7 +7,7 @@
     "start": "node index",
     "build": "npm --prefix frontend install && npm --prefix frontend run build",
     "dev:fs": "concurrently -n api,ui -c blue,green \"node index\" \"npm --prefix frontend run dev\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "author": "",
   "license": "MIT",

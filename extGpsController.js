@@ -4,9 +4,9 @@ const ObdWithExtGps = require('./persistence/models/obdWithExtGps');
 
 const ingestExternalGps = async (req, res) => {
     try {
-        const formatted = formatGpsPayload(req.body);  
-        if (!formatted) {
-            return res.status(400).json({ error: 'Invalid or incomplete GPS payload' });
+        const { payload: formatted, error } = formatGpsPayload(req.body);
+        if (error) {
+            return res.status(400).json({ error });
         }
 
         const sync_ts = tsSync(formatted.ts);
@@ -20,11 +20,26 @@ const ingestExternalGps = async (req, res) => {
 };
 
 const formatGpsPayload = (body) => {
+    if (!body || typeof body !== 'object') {
+        return { error: 'GPS payload must be a JSON or form-encoded object' };
+    }
+
     const { lat, lon, acc, ts, spd, alt, dir, act, prov, aid, sat, hdop, pdop, email } = body;
-    // console.log('Received GPS payload:', body);
-    if (!lat || !lon || !ts) return null;
-    if (acc > 50) return null;
-    return { lat, lon, acc, spd, alt, ts, dir, act, prov, aid, sat, hdop, pdop, email };
+    const missing = ['lat', 'lon', 'ts'].filter((field) => body[field] === undefined || body[field] === null || body[field] === '');
+    if (missing.length > 0) {
+        return { error: `Missing required GPS fields: ${missing.join(', ')}` };
+    }
+
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
+        return { error: 'GPS latitude and longitude must be numeric' };
+    }
+
+    // Accuracy describes the quality of a valid fix. Persist low-accuracy fixes so
+    // temporary reception problems do not break ingestion; consumers can decide
+    // whether a particular fix is accurate enough for their use case.
+    return {
+        payload: { lat, lon, acc, spd, alt, ts, dir, act, prov, aid, sat, hdop, pdop, email }
+    };
 };
 
 const persistGps = async (sync_ts, data) => {
@@ -60,5 +75,4 @@ const persistObd = async (doc) => {
     console.log(`OBD upsert [${sync_ts}]:`, result);
 };
 
-module.exports = { ingestExternalGps, persistObd };
-
+module.exports = { ingestExternalGps, formatGpsPayload, persistObd };

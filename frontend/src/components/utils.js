@@ -17,11 +17,9 @@ const META_PREFIXES = ['defaultUnit', 'userUnit', 'userShortName', 'userFullName
 const ELAPSED_UNIT_LABELS = { D: 'days', H: 'hrs', M: 'min', S: 'sec' }
 
 // Live telemetry staleness thresholds
-let LIVE_THRESHOLD_MS_MAX        = 30 * 60 * 1000
-let SHORT_BREAK_THRESHOLD_MS_MAX = 4 * 60 * 60 * 1000
-let LONG_BREAK_THRESHOLD_MS_MAX  = 3 * 24 * 60 * 60 * 1000
-
-  // SHORT_BREAK_THRESHOLD_MS_MAX = LONG_BREAK_THRESHOLD_MS_MAX;
+const LIVE_THRESHOLD_MS_MAX        = 30 * 60 * 1000
+const SHORT_BREAK_THRESHOLD_MS_MAX = 4 * 60 * 60 * 1000
+const LONG_BREAK_THRESHOLD_MS_MAX  = 3 * 24 * 60 * 60 * 1000
 
 // ── Internal helpers ────────────────────────────────────────────────────────
 
@@ -237,11 +235,10 @@ export function getKpiHistory(history, kpiKey) {
 export const getTelemetryStatus = (lastData, now = Date.now()) => {
   if (!lastData) return { status: 'no-trips' }
   const ageMs = now - lastData.getTime()
-  // return { status: 'no-trips', message: 'Driver is potentially on a long break or an overnight stop or offline' }
   if (ageMs <= LIVE_THRESHOLD_MS_MAX) return { status: 'live' }
   if (ageMs > LIVE_THRESHOLD_MS_MAX && ageMs <= SHORT_BREAK_THRESHOLD_MS_MAX) return { status: 'stale-short', message: 'Driver is potentially resting or offline' }
   if (ageMs > SHORT_BREAK_THRESHOLD_MS_MAX && ageMs <= LONG_BREAK_THRESHOLD_MS_MAX) return { status: 'stale-long', message: 'Driver is potentially on a long break or an overnight stop or offline' }
-  if (ageMs > LONG_BREAK_THRESHOLD_MS_MAX) return { status: 'no-trips' }
+  return { status: 'no-trips' }
 }
 
 // Shared date/time formatters — 'DD-MON-YY' and 'HH:MM:SS'

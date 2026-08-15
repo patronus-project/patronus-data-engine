@@ -1,19 +1,29 @@
 import { useState } from 'react'
 
-// forceObd = true  → ignore evaluator, always use OBD/Torque GPS
-// forceObd = false → evaluator decides (default)
-const LS_KEY = 'patronus_obd_override'
+// A single persisted override keeps the two force modes mutually exclusive.
+const LS_KEY = 'patronus_gps_override'
+const LEGACY_LS_KEY = 'patronus_obd_override'
 
 export function useExtGpsToggle() {
-  const [forceObd, setForceObd] = useState(() => localStorage.getItem(LS_KEY) === 'true')
+  const [override, setOverride] = useState(() => {
+    const saved = localStorage.getItem(LS_KEY) ?? localStorage.getItem(LEGACY_LS_KEY)
+    if (saved === 'true' || saved === 'obd') return 'obd'
+    if (saved === 'ext') return 'ext'
+    return 'auto'
+  })
 
-  function toggle() {
-    setForceObd(prev => {
-      const next = !prev
-      localStorage.setItem(LS_KEY, String(next))
+  function toggle(target) {
+    setOverride(prev => {
+      const next = prev === target ? 'auto' : target
+      localStorage.setItem(LS_KEY, next)
       return next
     })
   }
 
-  return [forceObd, toggle]
+  return [
+    override === 'obd',
+    () => toggle('obd'),
+    override === 'ext',
+    () => toggle('ext'),
+  ]
 }
