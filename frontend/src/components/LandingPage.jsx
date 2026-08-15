@@ -84,8 +84,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
   const [activeTab, setActiveTab] = useState('fuel')
 
   // Ticks every second so the next-refresh countdown and live elapsed counter update in real time
-  // (starts at 0 and self-corrects on the first interval tick, ~1s after mount)
-  const [nowTick, setNowTick] = useState(0)
+  const [nowTick, setNowTick] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 1000)
     return () => clearInterval(id)
