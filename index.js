@@ -4,6 +4,7 @@ var express = require('express');
 var http = require('http');
 var bodyParser = require('body-parser');
 const { ingestExternalGps } = require('./extGpsController');
+const engineWatch = require('./engineWatch');
 // var ssl = require('./security');
 app = express();
 var keymapper =  require('./data.json');
@@ -41,12 +42,19 @@ function allowAll(req, res, next) {
             const msg = JSON.stringify(req.query);
             // console.log(req.headers)
             wsocketserver.broadCastMsg(msg,author)
-            persistObd2Query(req.query, req.headers['user-agent']).catch(function (err) {
-                console.log('obd2 persistence failed', err.message || err);
-            });
+            engineWatch.recordObdPing(req.query);
+            persistObd2Query(req.query, req.headers['user-agent'])
+                .then(engineWatch.recordObdResult)
+                .catch(function (err) {
+                    console.log('obd2 persistence failed', err.message || err);
+                    engineWatch.recordObdError(err);
+                });
             res.status(200);
             res.send('OK!');
         });
+    // Liveness for the external monitor — process memory only, no database query
+    app.route('/api/health')
+        .get(engineWatch.getHealth);
     // Paged detail for replay sliding window — must be before /api/obd2/history
     app.route('/api/obd2/history/paged')
         .get(function (req, res) {
@@ -98,7 +106,7 @@ function allowAll(req, res, next) {
             res.send('OK!');
         });
     app.route('/api/telemetry/gps-event')
-    .post(allowAll, ingestExternalGps);
+    .post(allowAll, engineWatch.observeGps, ingestExternalGps);
 
 wsocketserver.startWebSocketServer(server);
 
@@ -110,10 +118,15 @@ app.get('*', function (req, res) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+engineWatch.start();
+
 const { connect } = require('./persistence/mongoose');
 connect()
     .then(function () { console.log('MongoDB connected OK'); })
-    .catch(function (err) { console.error('MongoDB connection FAILED:', err.message); });
+    .catch(function (err) {
+        console.error('MongoDB connection FAILED:', err.message);
+        engineWatch.recordMongoConnectFailure(err);
+    });
 
 
 

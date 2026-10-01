@@ -597,12 +597,39 @@ Returns: `Trip[]` — newest first. 3-hour gap = new trip.
 ### `GET /api/keys`
 Returns full `data.json`.
 
+### `GET /api/health`
+Liveness for the external monitor (Cloud Run `checkTelemetry`). Built from process memory and the Mongo driver's
+connection state — **no database query**. Returns `status` (`ok` | `alerting` | `degraded`), `uptimeSec`, `build`,
+`mongo`, `ingest.obd` / `ingest.gps` (last ping time, last speed km/h, counters since start), `drive`, `activeAlerts`.
+Never contains coordinates or emails. Counters reset on restart (the "Engine started" alert announces restarts).
+
 ### `POST /api/telemetry/gps-event`
 Body: mendhak GPS Logger payload (`lat`, `lon`, `acc`, `ts`, `spd`, `alt`, `dir`, `act`, `prov`, `aid`, `sat`, `hdop`, `pdop`, `email`)
 Rejects payloads with missing `lat`/`lon`/`ts` or non-numeric coordinates. Accuracy is stored as reported; a low-accuracy fix does not cause ingestion to fail.
 Upserts into `ObdWithExtGps` by `{ sync_ts, email }`.
 
 ---
+
+### Engine watch notifications (`engineWatch.js`)
+
+Observe-only: hooks read what `/api/obd2` and `/api/telemetry/gps-event` already did and never change what is written.
+Posts to the **public** ntfy topic `NTFY_TOPIC` (default `patronus-watch-location-engine`), so messages never include
+coordinates, emails, session ids, user agents or raw DB errors. Enabled automatically on Railway; locally it only logs
+(force with `NTFY_ENABLED=true`). Rules run every 60s and alert on state change only:
+
+| Alert | When |
+|---|---|
+| Engine started | every boot — an unexpected one means a crash/restart |
+| OBD ping not saved / OBD save failed | ping skipped (user agent, missing fields) or persistence error — 30 min cooldown, repeats counted |
+| GPS ping rejected / GPS save failed | ingest answered 4xx / 5xx — 30 min cooldown |
+| Drive started / Drive summary | first ping above 10 km/h; summary after 15 min stationary or 60 min of no data |
+| No data mid-drive | nothing from either stream for 5 min during a drive |
+| OBD stopped / Ext GPS stopped mid-drive | one stream silent 5 min while the other is alive (OBD rule only if OBD was part of the drive) |
+| Ext GPS frozen | 6 identical ext GPS fixes in a row while OBD reads > 5 km/h |
+| Database disconnected | Mongo driver disconnects; resolves on reconnect |
+
+The external Cloud Run monitor (topic `patronus-watch-location`) polls `/api/health` and covers what the engine can't
+report itself: unreachable, database down, and quiet-after-moving (alerting once at 10/30/60/120 min).
 
 ## 18. KPI Key Reference
 
