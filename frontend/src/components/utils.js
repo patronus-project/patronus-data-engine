@@ -16,6 +16,9 @@ const META_PREFIXES = ['defaultUnit', 'userUnit', 'userShortName', 'userFullName
 
 const ELAPSED_UNIT_LABELS = { D: 'days', H: 'hrs', M: 'min', S: 'sec' }
 
+// mendhak GPS Logger reports speed in m/s
+const MS_TO_KMH = 3.6
+
 // Live telemetry staleness thresholds
 const LIVE_THRESHOLD_MS_MAX        = 30 * 60 * 1000
 const SHORT_BREAK_THRESHOLD_MS_MAX = 4 * 60 * 60 * 1000
@@ -215,6 +218,24 @@ export function getExtSyncTs(time) {
   const ms = Number(time)
   if (!ms) return null
   return Math.floor(ms / 10000) * 10000
+}
+
+// Ext GPS speed (km/h) for the bucket a record falls in, or null when that bucket has no ext fix
+export const getExtSpeedKmh = (record, extMap) => {
+  const syncTs = getExtSyncTs(record?.time)
+  if (syncTs == null) return null
+  const spd = parseFloat(extMap?.get(syncTs)?.extGps?.spd)
+  return isNaN(spd) ? null : spd * MS_TO_KMH
+}
+
+// GET a list endpoint. Rejects on a non-2xx status (e.g. Railway's 502 HTML page while the service wakes),
+// a non-JSON body, or a non-array payload (e.g. { error } from a failed Mongo query) — so callers see one failure path.
+export const fetchJsonArray = async (url) => {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} failed: HTTP ${res.status}`)
+  const data = await res.json()
+  if (!Array.isArray(data)) throw new Error(`${url} returned an unexpected response`)
+  return data
 }
 
 // Returns [{ value, receivedAt }] for a specific KPI key across all records

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio, CircleHelp, Satellite } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
-import { extractKpiMap, getPathPoints, getExtPathPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs } from './utils'
+import { extractKpiMap, getPathPoints, getExtPathPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs, getExtSpeedKmh } from './utils'
 import { useExtGpsToggle } from '../hooks/useExtGpsToggle'
 import KpiHero from './KpiHero'
 import InfoModal from './InfoModal'
@@ -137,6 +137,8 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     const extGps = extDoc?.extGps ?? {}
     return Object.entries(extGps).filter(([k]) => k !== 'ts')
   }, [currentRecord, extMap])
+
+  const extGpsSpeedKmh = useMemo(() => getExtSpeedKmh(currentRecord, extMap), [currentRecord, extMap])
 
   const mapPoints = useMemo(() => {
     if (records.length === 0) return []
@@ -279,7 +281,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
                 </p>
               ) : (
                 <>
-                  <div className="kpi-hero-pad"><KpiHero kvm={currentKpiMap} /></div>
+                  <div className="kpi-hero-pad"><KpiHero kvm={currentKpiMap} extGpsSpeedKmh={extGpsSpeedKmh} /></div>
                   <div className="kpi-body">
                     <div className="kpi-tab-bar">
                       {TABS.map(t => (
