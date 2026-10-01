@@ -49,7 +49,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
 
   const [activeTab, setActiveTab] = useState('fuel')
 
-  const [forceObd, toggleObdOverride] = useExtGpsToggle()
+  const [forceObd, toggleObdOverride, forceExt, toggleExtOverride] = useExtGpsToggle()
   const [extMap, setExtMap] = useState(new Map())
   const sourceKey = source ? `${source.start}|${source.end}` : ''
 
@@ -145,16 +145,17 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     const slice = records.slice(0, frame + 1)
     if (!forceObd) {
       const extPoints = getExtPathPoints(slice, extMap)
-      if (extPoints.length > 0) return extPoints
+      if (forceExt || extPoints.length > 0) return extPoints
     }
     return getPathPoints(slice)
-  }, [records, frame, forceObd, extMap])
+  }, [records, frame, forceObd, forceExt, extMap])
 
   const displayedSource = useMemo(() => {
+    if (forceExt) return 'ext'
     if (forceObd || records.length === 0) return 'obd'
     const slice = records.slice(0, frame + 1)
     return getExtPathPoints(slice, extMap).length > 0 ? 'ext' : 'obd'
-  }, [records, frame, forceObd, extMap])
+  }, [records, frame, forceObd, forceExt, extMap])
 
   const heading = useMemo(() => {
     if (displayedSource === 'ext' && currentRecord?.time) {
@@ -223,6 +224,12 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
             onClick={toggleObdOverride}
             title={forceObd ? 'Forced OBD GPS — click to use best available' : 'Auto GPS — click to force OBD'}
             style={forceObd ? { background: '#e67e22', borderColor: '#e67e22' } : {}}
+          ><MapPin size={15} /></button>
+          <button
+            className="header-action-btn"
+            onClick={toggleExtOverride}
+            title={forceExt ? 'Forced Ext GPS — click to use best available' : 'Auto GPS — click to force Ext GPS'}
+            style={forceExt ? { background: '#c0392b', borderColor: '#c0392b' } : {}}
           ><Satellite size={15} /></button>
           <button className="header-action-btn" onClick={onExit} title="Back to Live"><Radio size={15} /></button>
         </div>

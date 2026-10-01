@@ -599,7 +599,7 @@ Returns full `data.json`.
 
 ### `POST /api/telemetry/gps-event`
 Body: mendhak GPS Logger payload (`lat`, `lon`, `acc`, `ts`, `spd`, `alt`, `dir`, `act`, `prov`, `aid`, `sat`, `hdop`, `pdop`, `email`)
-Rejects if `acc > 50` or missing `lat`/`lon`/`ts`.
+Rejects payloads with missing `lat`/`lon`/`ts` or non-numeric coordinates. Accuracy is stored as reported; a low-accuracy fix does not cause ingestion to fail.
 Upserts into `ObdWithExtGps` by `{ sync_ts, email }`.
 
 ---
