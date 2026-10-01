@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { extractKpiMap, getExtSyncTs } from '../components/utils'
 
-const OBD_SPEED_KEY  = 'k0d'      // OBD vehicle speed (km/h), PID 0x0D
+const OBD_SPEED_KEY  = 'kd'       // OBD vehicle speed (km/h), PID 0x0D — Torque drops the leading zero
 const TORQUE_LAT_KEY = 'kff1006'  // Torque GPS latitude
 const TORQUE_LON_KEY = 'kff1005'  // Torque GPS longitude
 const TORQUE_SPD_KEY = 'kff1001'  // Torque GPS speed (km/h) — verify against your PIDs

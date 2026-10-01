@@ -102,7 +102,9 @@ function allowAll(req, res, next) {
 
 wsocketserver.startWebSocketServer(server);
 
-app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: '1y', immutable: true }));
+// Stopgap: this also serves index.html for '/', so a long max-age strands old builds (blank page after deploy).
+// 6h caps that window; the proper fix is index: false + no-store for index.html / sw.js / manifest (docs/03 rule 15).
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: '6h' }));
 app.get('*', function (req, res) {
     res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

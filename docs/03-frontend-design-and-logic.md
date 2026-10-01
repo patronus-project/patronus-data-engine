@@ -116,6 +116,16 @@ GET /api/obd2/ext-history  → ObdWithExtGps[]
 
 After all resolve, builds maps from `KeyEntry[]` and `extMap` from ext-history via `buildExtMap()`.
 
+### Poll failure handling
+
+Each endpoint goes through `fetchJsonArray()`, so a non-2xx status (e.g. Railway's 502 while the service wakes after
+the phone screen was off), a non-JSON body, or a non-array payload all count as one failed poll.
+
+| When | Behaviour |
+|---|---|
+| A poll fails **after** any successful load (`hasLoaded`) | Keep the last good data on screen; `LandingPage` shows a "Connection lost — retrying" bar (`pollError`). The next successful poll clears it. |
+| The **first** load fails | Full-page error, and `App` retries every 10s itself (`AutoRefreshBar` isn't mounted yet). |
+
 ---
 
 ## 4. Data Model
@@ -267,6 +277,15 @@ Converts ext-history array into a `Map` keyed by `sync_ts`. Guards against non-a
 Floors a record's `time` string to 10s bucket: `Math.floor(Number(time) / 10000) * 10000`.
 Returns `null` for falsy/NaN input.
 
+### `fetchJsonArray(url) → Promise<array>`
+
+GET a list endpoint. Rejects on non-2xx status, non-JSON body, or non-array payload. Used by the live poll in `App`.
+
+### `getExtSpeedKmh(record, extMap) → number | null`
+
+Ext GPS speed in km/h for the bucket `record.time` falls in: `extMap.get(getExtSyncTs(record.time)).extGps.spd × 3.6`.
+Returns `null` when the record, the bucket or `spd` is missing. Feeds the KPI Hero "Speed (GPS)" gauge.
+
 ### `getKpiHistory(history, kpiKey) → { value, receivedAt }[]`
 
 All readings for one key, oldest-first. Used by KpiDetail.
@@ -324,7 +343,7 @@ Tie (both equal, e.g. car stopped at red) → retain current source (no unnecess
 
 | Constant | Value | Purpose |
 |---|---|---|
-| `OBD_SPEED_KEY` | `'k0d'` | OBD vehicle speed (km/h) |
+| `OBD_SPEED_KEY` | `'kd'` | OBD vehicle speed (km/h). Torque spells PID 0x0D without the leading zero; `'k0d'` never matches |
 | `TORQUE_LAT_KEY` | `'kff1006'` | Torque GPS latitude |
 | `TORQUE_LON_KEY` | `'kff1005'` | Torque GPS longitude |
 | `TORQUE_SPD_KEY` | `'kff1001'` | Torque GPS speed — verify against PIDs |
@@ -430,7 +449,20 @@ Absolutely positioned chip, `bottom: 15px, right: 10px`, inside `.map-section` (
 
 ## 10. KPI Hero Section (`KpiHero.jsx`)
 
-*(Unchanged — see previous version)*
+*(Unchanged — see previous version, except:)*
+
+### Speed (GPS) gauge — always ext GPS
+
+Desktop-only gauge. Shows **ext GPS speed** (`extGpsSpeedKmh` prop, from `getExtSpeedKmh`), never Torque's `kff1001`.
+Torque's GPS is expected to freeze (constant coords, `kff1001` stuck at `0.0`), which is why ext GPS exists.
+
+| View | Record used |
+|---|---|
+| Live (`LandingPage`) | `history[0]`, the newest OBD record |
+| Replay (`ReplayPage`) | `currentRecord`, the current frame |
+
+No ext fix for that bucket → `null` → gauge shows 0. The gauge does not follow `displayedSource` or the OBD override;
+it always shows ext. The GPS *source selection* (map, heading) is unchanged.
 
 ---
 
@@ -649,8 +681,9 @@ Hooks
 13. **Trip IDs are positional** — never persist them.
 14. **PWA install requires HTTPS.** LAN IP will not trigger the install prompt.
 15. **index.html must never be cached.** Serve with `Cache-Control: no-store`.
+    *Known gap (2026-10-02):* `express.static` serves `index.html` for `/` before the `no-store` catch-all, so `/` and `/index.html` get the static `max-age` (stopgap: 6h, was 1y immutable). Only deep links like `/replay` get `no-store`. Proper fix: `index: false` + no-store for `index.html`, `sw.js`, `registerSW.js`, `manifest.webmanifest`.
 16. **`buildExtMap` guards against non-array input** — API errors return `{}`, not `[]`. Always check `Array.isArray` before iterating.
 17. **`getExtSyncTs` returns `null` for falsy/NaN input.** Always null-check before Map lookup.
-18. **Ext GPS `spd` is m/s.** Multiply by 3.6 for km/h comparison. Display raw in Ext tab.
+18. **Ext GPS `spd` is m/s.** Multiply by 3.6 for km/h comparison and for the KPI Hero "Speed (GPS)" gauge. Display raw in Ext tab.
 19. **`displayedSource` is not the same as `activeSource`.** `activeSource` is the evaluator/toggle decision; `displayedSource` accounts for data availability and may fall back to OBD even when ext is preferred.
 20. **Heading uses ext `dir` only when `displayedSource === 'ext'`.** Computed after `displayedSource` — order of hook declarations matters.

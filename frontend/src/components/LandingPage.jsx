@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, CircleHelp, Satellite, Clock } from 'lucide-react'
+import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, CircleHelp, Satellite, Clock, WifiOff } from 'lucide-react'
 import MapView from './MapView'
 import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
 import AutoRefreshBar from './AutoRefreshBar'
 import HeaderActions from './HeaderActions'
-import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs, getTelemetryStatus, getElapsedParts } from './utils'
+import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs, getExtSpeedKmh, getTelemetryStatus, getElapsedParts } from './utils'
 import KpiHero from './KpiHero'
 
 
@@ -62,7 +62,7 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc',
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
 
-export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastData, onReplay }) {
+export default function LandingPage({ history, extMap, activeSource, forceObd, onToggleObdOverride, gpsWarning, pollError, keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onSelectKpi, onRefresh, lastData, onReplay }) {
   const topKpis = getTopKpis(history)
 
   const extBreadcrumb = useMemo(() => getExtBreadcrumb(history, extMap), [history, extMap])
@@ -80,6 +80,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
   }, [displayedSource, history, extMap])
 
   const kvm = Object.fromEntries(topKpis.map(({ key, value }) => [key, value]))
+  const extGpsSpeedKmh = useMemo(() => history.length > 0 ? getExtSpeedKmh(history[0], extMap) : null, [history, extMap])
   const [modal, setModal] = useState(null)
   const [activeTab, setActiveTab] = useState('fuel')
 
@@ -112,6 +113,11 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
           <HeaderActions forceObd={forceObd} onToggleObdOverride={onToggleObdOverride} onReplay={onReplay} />
         </div>
       </div>
+      {pollError && (
+        <div className="gps-warning-bar" role="status" title={pollError}>
+          <WifiOff size={13} /> Connection lost — showing last received data, retrying…
+        </div>
+      )}
       {gpsWarning && (
         <div className="gps-warning-bar">
           <Satellite size={13} /> {gpsWarning}
@@ -135,7 +141,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, o
           ) : (
             <>
               <div className="kpi-hero-pad">
-                <KpiHero kvm={kvm} />
+                <KpiHero kvm={kvm} extGpsSpeedKmh={extGpsSpeedKmh} />
                 {telemetryStatus.message && (
                   <div className={`telemetry-stale-toast-big ${telemetryStatus.status}`}>
                     <div className="timer-block" role="timer" aria-live="polite" aria-atomic="true">
