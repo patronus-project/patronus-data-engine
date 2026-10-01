@@ -6,8 +6,8 @@ const mongoose = require('mongoose');
 
 const NTFY_URL = 'https://ntfy.sh';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'patronus-watch-location-engine';
-// On wherever the engine runs; NTFY_ENABLED=false is the only off switch
-const NTFY_ENABLED = process.env.NTFY_ENABLED !== 'false';
+// On wherever the engine runs; set NTFY_DISABLED=true to turn it off
+const NTFY_DISABLED = process.env.NTFY_DISABLED === 'true';
 
 const EVAL_INTERVAL_MS = 60 * 1000;
 const MOVING_KMH = 10;                       // a ping above this counts as driving
@@ -60,7 +60,7 @@ const safe = (fn) => {
 const notify = (title, message, { priority = 'default', tags = [] } = {}) => {
     if (sink) return sink({ title, message, priority, tags });
     console.log(`[engine-watch] ${title} | ${message}`);
-    if (!NTFY_ENABLED || typeof fetch !== 'function') return;
+    if (NTFY_DISABLED || typeof fetch !== 'function') return;
     // Header values must stay ASCII (titles here are); emoji go in Tags
     fetch(`${NTFY_URL}/${NTFY_TOPIC}`, {
         method: 'POST',

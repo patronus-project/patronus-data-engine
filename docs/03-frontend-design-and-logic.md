@@ -615,7 +615,7 @@ Upserts into `ObdWithExtGps` by `{ sync_ts, email }`.
 Observe-only: hooks read what `/api/obd2` and `/api/telemetry/gps-event` already did and never change what is written.
 Posts to the **public** ntfy topic `NTFY_TOPIC` (default `patronus-watch-location-engine`), so messages never include
 coordinates, emails, session ids, user agents or raw DB errors. On wherever the engine runs (local included) — it never
-checks the hosting environment; `NTFY_ENABLED=false` is the only off switch. Rules run every 60s and alert on state change only:
+checks the hosting environment; set `NTFY_DISABLED=true` to turn it off. Rules run every 60s and alert on state change only:
 
 | Alert | When |
 |---|---|
