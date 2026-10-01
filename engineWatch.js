@@ -6,10 +6,8 @@ const mongoose = require('mongoose');
 
 const NTFY_URL = 'https://ntfy.sh';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'patronus-watch-location-engine';
-// On by default only on Railway, so local runs don't post to the public topic (they log instead)
-const NTFY_ENABLED = process.env.NTFY_ENABLED
-    ? process.env.NTFY_ENABLED === 'true'
-    : Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_ENVIRONMENT);
+// On wherever the engine runs; NTFY_ENABLED=false is the only off switch
+const NTFY_ENABLED = process.env.NTFY_ENABLED !== 'false';
 
 const EVAL_INTERVAL_MS = 60 * 1000;
 const MOVING_KMH = 10;                       // a ping above this counts as driving
@@ -244,9 +242,8 @@ const watchMongo = () => {
 
 const start = () => safe(() => {
     watchMongo();
-    const build = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local';
     notify('Engine started',
-        `Patronus engine is up (build ${build}). A start you didn't trigger means it crashed or Railway restarted it.`,
+        `Patronus engine is up at ${iso(state.startedAt)}. A start you didn't trigger means it crashed or was restarted.`,
         { priority: 'low', tags: ['rocket'] });
     setInterval(evaluate, EVAL_INTERVAL_MS).unref();
 });
@@ -263,7 +260,6 @@ const getHealth = (req, res) => {
         status: mongo !== 'connected' ? 'degraded' : state.alerts.size > 0 ? 'alerting' : 'ok',
         serverTime: iso(now),
         uptimeSec: Math.round((now - state.startedAt) / 1000),
-        build: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local',
         mongo,
         ingest: {
             sinceStart: iso(state.startedAt),

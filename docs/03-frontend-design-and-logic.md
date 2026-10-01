@@ -599,7 +599,7 @@ Returns full `data.json`.
 
 ### `GET /api/health`
 Liveness for the external monitor (Cloud Run `checkTelemetry`). Built from process memory and the Mongo driver's
-connection state — **no database query**. Returns `status` (`ok` | `alerting` | `degraded`), `uptimeSec`, `build`,
+connection state — **no database query**. Returns `status` (`ok` | `alerting` | `degraded`), `uptimeSec`,
 `mongo`, `ingest.obd` / `ingest.gps` (last ping time, last speed km/h, counters since start), `drive`, `activeAlerts`.
 Never contains coordinates or emails. Counters reset on restart (the "Engine started" alert announces restarts).
 
@@ -614,8 +614,8 @@ Upserts into `ObdWithExtGps` by `{ sync_ts, email }`.
 
 Observe-only: hooks read what `/api/obd2` and `/api/telemetry/gps-event` already did and never change what is written.
 Posts to the **public** ntfy topic `NTFY_TOPIC` (default `patronus-watch-location-engine`), so messages never include
-coordinates, emails, session ids, user agents or raw DB errors. Enabled automatically on Railway; locally it only logs
-(force with `NTFY_ENABLED=true`). Rules run every 60s and alert on state change only:
+coordinates, emails, session ids, user agents or raw DB errors. On wherever the engine runs (local included) — it never
+checks the hosting environment; `NTFY_ENABLED=false` is the only off switch. Rules run every 60s and alert on state change only:
 
 | Alert | When |
 |---|---|
