@@ -26,7 +26,29 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "PowerShell(npm *)",
+      "PowerShell(npx *)",
+      "PowerShell(node *)",
+      "PowerShell(.\\gradlew *)",
+      "PowerShell(java *)",
+      "PowerShell(adb *)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log *)",
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "PowerShell(git switch *)",
+      "Read(//i/jsdev1/patronus-health-app/**)",
+      "Edit(//i/jsdev1/patronus-health-app/**)",
+      "WebFetch(domain:docs.expo.dev)",
+      "WebFetch(domain:reactnative.dev)",
+      "mcp__mongo-data-engine__aggregate",
+      "mcp__mongo-data-engine__find",
+      "mcp__mongo-data-engine__count"
     ]
   }
 }
