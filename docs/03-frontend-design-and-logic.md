@@ -592,7 +592,7 @@ Returns: `{ records, total, offset, limit }` — `obdReceivedAt` ascending.
 
 ### `GET /api/trips`
 Params: `start`, `end` (ISO, defaults: last 7 days)
-Returns: `Trip[]` — newest first. 3-hour gap = new trip.
+Returns: `Trip[]` — newest first. 24-hour gap in OBD pings = new trip (shorter silences are short/long breaks inside one trip).
 
 ### `GET /api/keys`
 Returns full `data.json`.
