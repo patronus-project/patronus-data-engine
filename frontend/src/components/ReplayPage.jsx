@@ -2,8 +2,12 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio, CircleHelp, Satellite } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
-import { extractKpiMap, getPathPoints, getExtPathPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs, getExtSpeedKmh } from './utils'
+import { extractKpiMap, getPathPoints, getExtPathPoints, getTrackPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs, getExtSpeedKmh } from './utils'
 import { useExtGpsToggle } from '../hooks/useExtGpsToggle'
+import { useTripDays } from '../hooks/useTripDays'
+import { useTripProgress } from '../hooks/useTripProgress'
+import { dayInfoAt, SHORT_BREAK_MS } from './tripDays'
+import { tripKey, showTripInUrl } from './shareLink'
 import KpiHero from './KpiHero'
 import InfoModal from './InfoModal'
 import TripSelector from './TripSelector'
@@ -16,13 +20,33 @@ const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc',
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
 
-export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onExit }) {
+// Track mode on the map shows this many of the most recent frames, one dot per data point
+const TRACK_WINDOW = 600
+
+// UTC calendar day (YYYY-MM-DD) of an ISO time — the same day basis the trip list's date filter uses
+const dayOf = (iso) => new Date(iso).toISOString().slice(0, 10)
+
+// A shared link naming a time range opens as a pseudo-trip (no saved details); a saved-trip link is fetched below
+const rangeTrip = (link) => ({ tripId: null, startTime: link.start, endTime: link.end, durationMs: new Date(link.end) - new Date(link.start), recordCount: null })
+
+export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onExit, initialLink }) {
   const [mode, setMode] = useState('trips')
   const [modal, setModal] = useState(null) // null | 'names' | 'profile'
 
   // Trips mode state
-  const { trips, loading: tripsLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useTrips()
-  const [selectedTrip, setSelectedTrip] = useState(null)
+  // Landing on a shared link lists trips from the linked trip's start day through today
+  const { trips, loading: tripsLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useTrips(initialLink && initialLink.start ? dayOf(initialLink.start) : undefined)
+  const [selectedTrip, setSelectedTrip] = useState(() => (initialLink && initialLink.start ? rangeTrip(initialLink) : null))
+  const [linkError, setLinkError] = useState(null)
+
+  // Shared link to a saved trip: fetch it so its name, description and bounds are known
+  useEffect(() => {
+    if (!initialLink || !initialLink.trip) return
+    fetch(`/api/trips/saved/${initialLink.trip}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'This shared trip no longer exists.' : `Could not load the shared trip (HTTP ${r.status}).`))))
+      .then(trip => { setSelectedTrip(trip); setDateFrom(dayOf(trip.startTime)) })
+      .catch(err => setLinkError(err.message))
+  }, [initialLink, setDateFrom])
 
   // Custom range mode state
   const [customStart, setCustomStart] = useState('')
@@ -44,6 +68,21 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     records, total, frame, playing, speed, buffering,
     currentRecord, play, pause, seek, setSpeed,
   } = useReplayStream(source)
+
+  // The timeline gives every frame's time up front, so the day shows even while a far seek is still buffering
+  const { days, times, clocks } = useTripDays(source)
+  const frameMs = times[frame] ?? (currentRecord ? new Date(currentRecord.receivedAt).getTime() : null)
+  const startMs = source ? new Date(source.start).getTime() : null
+  const endMs = source ? new Date(source.end).getTime() : null
+  // A trip too short to have fetched its timeline is one day ("1 of 1") and, being under a break long, has no breaks
+  const dayInfo = useMemo(
+    () => dayInfoAt(days, frameMs) ?? (frameMs != null && startMs != null ? { index: 1, total: 1 } : null),
+    [days, frameMs, startMs]
+  )
+  const tooShortForBreaks = startMs != null && endMs - startMs < SHORT_BREAK_MS
+  const tripTimeMs = clocks.tripTimeMs[frame] ?? (tooShortForBreaks && frameMs != null ? Math.max(0, frameMs - startMs) : null)
+  const lastBreakMs = clocks.lastBreakMs[frame] ?? null
+  const totalTripMs = clocks.tripTimeMs.length ? clocks.tripTimeMs[clocks.tripTimeMs.length - 1] : (tooShortForBreaks ? endMs - startMs : null)
 
   const currentKpiMap = useMemo(() => currentRecord ? extractKpiMap(currentRecord) : {}, [currentRecord])
 
@@ -157,6 +196,15 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     return getExtPathPoints(slice, extMap).length > 0 ? 'ext' : 'obd'
   }, [records, frame, forceObd, forceExt, extMap])
 
+  // Track mode: a rolling window of the latest frames at full resolution, moving in step with the playhead
+  const trackOffset = Math.max(0, frame + 1 - TRACK_WINDOW)
+  const trackPoints = useMemo(
+    () => (records.length === 0 ? [] : getTrackPoints(records.slice(trackOffset, frame + 1), displayedSource === 'ext' ? extMap : null)),
+    [records, frame, trackOffset, displayedSource, extMap]
+  )
+
+  const progress = useTripProgress({ records, extMap, frame, tripTimeMs, totalTripMs })
+
   const heading = useMemo(() => {
     if (displayedSource === 'ext' && currentRecord?.time) {
       const syncTs = getExtSyncTs(currentRecord.time)
@@ -170,15 +218,22 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     setMode(next)
     setSelectedTrip(null)
     setActiveCustom(null)
+    setLinkError(null)
+    showTripInUrl(null)
   }
 
   function handleSelectTrip(trip) {
     setSelectedTrip(trip)
+    setLinkError(null)
+    showTripInUrl(trip)
   }
 
   function handleLoadCustom() {
     if (customStart && customEnd) {
-      setActiveCustom({ start: customStart, end: customEnd })
+      // datetime-local has no zone: convert here, in the browser's zone, so the range (and its link) is unambiguous
+      const range = { start: new Date(customStart).toISOString(), end: new Date(customEnd).toISOString() }
+      setActiveCustom(range)
+      showTripInUrl({ startTime: range.start, endTime: range.end })
     }
   }
 
@@ -189,7 +244,11 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
         startTime: new Date(selectedTrip.startTime),
         endTime: new Date(selectedTrip.endTime),
         durationMs: selectedTrip.durationMs,
-        recordCount: selectedTrip.recordCount,
+        recordCount: selectedTrip.recordCount ?? total,
+        savedTripId: selectedTrip.savedTripId,
+        name: selectedTrip.name,
+        description: selectedTrip.description,
+        tags: selectedTrip.tags,
       }
     }
     if (mode === 'custom' && activeCustom) {
@@ -240,7 +299,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
         onModeChange={handleModeChange}
         trips={trips}
         tripsLoading={tripsLoading}
-        selectedTripId={selectedTrip?.tripId}
+        selectedKey={selectedTrip ? tripKey(selectedTrip) : null}
         onSelectTrip={handleSelectTrip}
         dateFrom={dateFrom}
         dateTo={dateTo}
@@ -255,7 +314,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
 
       {source ? (
         <>
-          <ReplayHeader trip={tripSummary} frame={frame} total={total} currentRecord={currentRecord} />
+          <ReplayHeader trip={tripSummary} frame={frame} total={total} frameMs={frameMs} dayInfo={dayInfo} tripTimeMs={tripTimeMs} lastBreakMs={lastBreakMs} progress={progress} />
           <ReplayControls
             playing={playing}
             frame={frame}
@@ -269,7 +328,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
           />
           <div className="landing">
             <div className="map-section">
-              <MapView points={mapPoints} heading={heading} />
+              <MapView points={mapPoints} trackPoints={trackPoints} trackOffset={trackOffset} showTrackLine={!playing} heading={heading} />
               <div className={`map-source-badge ${displayedSource}`}>
                 {displayedSource === 'ext' ? 'Ext GPS' : 'OBD GPS'}
               </div>
@@ -326,7 +385,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
         </>
       ) : (
         <div className="replay-empty">
-          <p>{mode === 'trips' ? 'Select a trip above to begin replay.' : 'Set a time range and click Load.'}</p>
+          <p>{linkError || (mode === 'trips' ? 'Select a trip above to begin replay.' : 'Set a time range and click Load.')}</p>
         </div>
       )}
 

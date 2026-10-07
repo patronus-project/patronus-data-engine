@@ -1,3 +1,5 @@
+import { tripKey } from './shareLink'
+
 function fmtDate(dateStr) {
   return new Date(dateStr).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
@@ -14,7 +16,7 @@ function fmtDuration(ms) {
 
 // ── Trips mode ────────────────────────────────────────────────────────────────
 
-function TripsMode({ trips, loading, selectedTripId, onSelect, dateFrom, dateTo, onDateFrom, onDateTo }) {
+function TripsMode({ trips, loading, selectedKey, onSelect, dateFrom, dateTo, onDateFrom, onDateTo }) {
   return (
     <>
       <div className="date-range">
@@ -33,10 +35,11 @@ function TripsMode({ trips, loading, selectedTripId, onSelect, dateFrom, dateTo,
         {!loading && trips.length === 0 && <span className="no-trips">No trips in range</span>}
         {trips.map(trip => (
           <button
-            key={trip.tripId}
-            className={`trip-chip${trip.tripId === selectedTripId ? ' active' : ''}`}
+            key={tripKey(trip)}
+            className={`trip-chip${tripKey(trip) === selectedKey ? ' active' : ''}${trip.name ? ' saved' : ''}`}
             onClick={() => onSelect(trip)}
           >
+            {trip.name && <span className="trip-chip-name">{trip.name}</span>}
             <span className="trip-chip-date">{fmtDate(trip.startTime)} {fmtTime(trip.startTime)}</span>
             <span className="trip-chip-date">{fmtDate(trip.endTime)} {fmtTime(trip.endTime)}</span>
             <span className="trip-chip-meta">{fmtDuration(trip.durationMs)} · {trip.recordCount} pts</span>
@@ -80,7 +83,7 @@ function CustomRangeMode({ customStart, customEnd, onCustomStart, onCustomEnd, o
 
 export default function TripSelector({
   mode, onModeChange,
-  trips, tripsLoading, selectedTripId, onSelectTrip,
+  trips, tripsLoading, selectedKey, onSelectTrip,
   dateFrom, dateTo, onDateFrom, onDateTo,
   customStart, customEnd, onCustomStart, onCustomEnd, onLoadCustom,
 }) {
@@ -105,7 +108,7 @@ export default function TripSelector({
         <TripsMode
           trips={trips}
           loading={tripsLoading}
-          selectedTripId={selectedTripId}
+          selectedKey={selectedKey}
           onSelect={onSelectTrip}
           dateFrom={dateFrom}
           dateTo={dateTo}
