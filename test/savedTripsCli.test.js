@@ -10,19 +10,21 @@ const harness = (answers, storeOverrides = {}) => {
     const asked = [];
     const created = [];
     const removed = [];
+    const analyticsFor = [];
     const store = {
         findOverlapping: async () => [],
         recordsIn: async () => ({ count: 1234, first: new Date('2026-06-05T14:50:00Z'), last: new Date('2026-06-08T04:00:00Z') }),
         list: async () => [],
         create: async (doc) => { created.push(doc); return { _id: 'abc123', ...doc }; },
         softDelete: async (id) => { removed.push(id); },
+        computeAnalytics: async (id) => { analyticsFor.push(id); return { version: 1, summary: { distanceKm: 12.3, days: [{}], maxKmh: 88 }, highlights: [1, 2, 3] }; },
         ...storeOverrides
     };
     const io = {
         ask: async (q) => { asked.push(q); if (queue.length === 0) throw new Error(`ran out of answers at: ${q}`); return queue.shift(); },
         print: (text) => out.push(text)
     };
-    return { io, store, out, asked, created, removed, text: () => out.join('\n') };
+    return { io, store, out, asked, created, removed, analyticsFor, text: () => out.join('\n') };
 };
 
 test('adds a trip: range, point count, confirmation, then name/description/tags one by one', async () => {
@@ -130,4 +132,118 @@ test('parseTime reads local times, explicit zones and bare dates', () => {
     assert.equal(parseTime('2026-06-08 04:00', { endOfDay: true }).getTime(), new Date('2026-06-08T04:00').getTime());
     assert.throws(() => parseTime('nonsense'), /isn't a date\/time/);
     assert.throws(() => parseTime('  '), /enter a date/);
+});
+
+test('after saving, it computes the trip analytics and reports them', async () => {
+    const h = harness(['1', '2026-06-05 20:00', '2026-06-08 09:30', 'y', 'Pune to Goa', '', '', 'q']);
+    await runCli(h.io, h.store);
+
+    assert.deepEqual(h.analyticsFor, ['abc123']);
+    assert.match(h.text(), /Computing trip analytics/);
+    assert.match(h.text(), /Analytics ready: 12\.3 km over 1 day\(s\), top speed 88 km\/h, 3 highlights/);
+});
+
+test('if the analytics fail, the trip is still saved and the person is told the server will retry', async () => {
+    const h = harness(['1', '2026-06-05 20:00', '2026-06-08 09:30', 'y', 'Trip', '', '', 'q'], {
+        computeAnalytics: async () => { throw new Error('db hiccup'); }
+    });
+    await runCli(h.io, h.store);
+
+    assert.equal(h.created.length, 1);
+    assert.match(h.text(), /Couldn't compute analytics now \(db hiccup\); the server will do it the next time it starts/);
+});
+
+test('a trip with too little data reports that instead of numbers', async () => {
+    const h = harness(['1', '2026-06-05 20:00', '2026-06-08 09:30', 'y', 'Trip', '', '', 'q'], {
+        computeAnalytics: async () => ({ version: 1, unavailable: true })
+    });
+    await runCli(h.io, h.store);
+
+    assert.match(h.text(), /Not enough data in that range to analyse/);
+});
+
+// ── Regenerate analytics (menu 4 and 5) ─────────────────────────────────────
+
+const twoTrips = () => [
+    { _id: 'id1', name: 'One', tags: [], description: '', startTime: new Date('2026-06-01T08:00Z'), endTime: new Date('2026-06-01T12:00Z'), analyticsComputedAt: new Date('2026-06-02T10:00Z') },
+    { _id: 'id2', name: 'Two', tags: [], description: '', startTime: new Date('2026-06-02T08:00Z'), endTime: new Date('2026-06-02T12:00Z'), analyticsComputedAt: null }
+];
+
+test('regenerate one: lists the trips, asks which, confirms, then recomputes just that one', async () => {
+    const h = harness(['4', '2', 'y', 'q'], { list: async () => twoTrips() });
+    await runCli(h.io, h.store);
+
+    assert.deepEqual(h.analyticsFor, ['id2']);
+    assert.match(h.text(), /analytics: computed/);                     // the list says which trips have analytics
+    assert.match(h.text(), /analytics: none yet/);
+    assert.match(h.text(), /Analytics ready/);
+    assert.equal(h.created.length, 0);
+});
+
+test('regenerate one: declining the confirmation, pressing Enter, or a bad number recomputes nothing', async () => {
+    const declined = harness(['4', '1', 'n', 'q'], { list: async () => twoTrips() });
+    await runCli(declined.io, declined.store);
+    const cancelled = harness(['4', '', 'q'], { list: async () => twoTrips() });
+    await runCli(cancelled.io, cancelled.store);
+    const bad = harness(['4', '9', 'q'], { list: async () => twoTrips() });
+    await runCli(bad.io, bad.store);
+
+    assert.deepEqual(declined.analyticsFor, []);
+    assert.deepEqual(cancelled.analyticsFor, []);
+    assert.deepEqual(bad.analyticsFor, []);
+    assert.match(bad.text(), /No trip number 9/);
+});
+
+test('regenerate all: one confirmation, then every trip in order with progress', async () => {
+    const h = harness(['5', 'y', 'q'], { list: async () => twoTrips() });
+    await runCli(h.io, h.store);
+
+    assert.deepEqual(h.analyticsFor, ['id1', 'id2']);
+    assert.match(h.text(), /\[1\/2\] One/);
+    assert.match(h.text(), /\[2\/2\] Two/);
+    assert.match(h.text(), /Done\./);
+});
+
+test('regenerate all: declining recomputes nothing', async () => {
+    const h = harness(['5', 'n', 'q'], { list: async () => twoTrips() });
+    await runCli(h.io, h.store);
+
+    assert.deepEqual(h.analyticsFor, []);
+    assert.match(h.text(), /Cancelled/);
+});
+
+test('regenerate all: a trip that fails is reported and the rest are still done', async () => {
+    const done = [];
+    const h = harness(['5', 'y', 'q'], {
+        list: async () => twoTrips(),
+        computeAnalytics: async (id) => {
+            if (id === 'id1') throw new Error('db hiccup');
+            done.push(id);
+            return { version: 2, summary: { distanceKm: 1, days: [{}], maxKmh: 2 }, highlights: [] };
+        }
+    });
+    await runCli(h.io, h.store);
+
+    assert.deepEqual(done, ['id2']);
+    assert.match(h.text(), /Couldn't compute analytics now \(db hiccup\)/);
+    assert.match(h.text(), /Done\./);
+});
+
+test('regenerate with no saved trips says so', async () => {
+    const one = harness(['4', 'q']);
+    await runCli(one.io, one.store);
+    const all = harness(['5', 'q']);
+    await runCli(all.io, all.store);
+
+    assert.match(one.text(), /No saved trips/);
+    assert.match(all.text(), /No saved trips/);
+    assert.deepEqual([...one.analyticsFor, ...all.analyticsFor], []);
+});
+
+test('the menu offers both regenerate options', async () => {
+    const h = harness(['q']);
+    await runCli(h.io, h.store);
+
+    assert.match(h.text(), /4\) Regenerate one trip's analytics/);
+    assert.match(h.text(), /5\) Regenerate all trips' analytics/);
 });

@@ -98,23 +98,45 @@ const addTrip = async (io, store) => {
 
     const saved = await store.create({ name, description, tags, startTime: range.start, endTime: range.end });
     io.print(`\nSaved "${name}".  id=${saved._id}\nReplay link: /replay?trip=${saved._id}`);
+    await computeAnalytics(io, store, saved._id);
+};
+
+// The Trip Summary's numbers are computed once and stored on the trip. This process is about to exit, so wait for it
+// here (the server would also pick it up at its next start, so a failure is not fatal).
+const computeAnalytics = async (io, store, id) => {
+    io.print('\nComputing trip analytics (a few seconds)...');
+    try {
+        const analytics = await store.computeAnalytics(id);
+        if (analytics && !analytics.unavailable) {
+            const s = analytics.summary;
+            io.print(`Analytics ready: ${s.distanceKm} km over ${s.days.length} day(s), top speed ${s.maxKmh} km/h, ${analytics.highlights.length} highlights.`);
+        } else {
+            io.print('Not enough data in that range to analyse.');
+        }
+    } catch (err) {
+        io.print(`Couldn't compute analytics now (${err.message}); the server will do it the next time it starts.`);
+    }
 };
 
 const listTrips = async (io, store) => {
     const trips = await store.list();
-    if (trips.length === 0) return io.print('\nNo saved trips.');
+    if (trips.length === 0) {
+        io.print('\nNo saved trips.');
+        return trips;
+    }
     io.print('');
     trips.forEach((t, i) => {
         io.print(`${i + 1}. ${t.name}${t.tags.length ? `  [${t.tags.join(', ')}]` : ''}`);
         io.print(`   ${t.startTime.toLocaleString()} → ${t.endTime.toLocaleString()}   id=${t._id}`);
         if (t.description) io.print(`   ${t.description}`);
+        io.print(`   analytics: ${t.analyticsComputedAt ? `computed ${t.analyticsComputedAt.toLocaleString()}` : 'none yet'}`);
     });
     return trips;
 };
 
 const removeTrip = async (io, store) => {
     const trips = await listTrips(io, store);
-    if (!trips || trips.length === 0) return undefined;
+    if (trips.length === 0) return undefined;
     const answer = (await io.ask('\nNumber of the trip to remove (Enter to cancel): ')).trim();
     if (!answer) return io.print('Cancelled.');
     const trip = trips[Number(answer) - 1];
@@ -124,10 +146,36 @@ const removeTrip = async (io, store) => {
     return io.print('Removed.');
 };
 
+// Recompute one trip's analytics (they are stored on the trip; this replaces them)
+const regenerateOne = async (io, store) => {
+    const trips = await listTrips(io, store);
+    if (trips.length === 0) return undefined;
+    const answer = (await io.ask('\nNumber of the trip to regenerate analytics for (Enter to cancel): ')).trim();
+    if (!answer) return io.print('Cancelled.');
+    const trip = trips[Number(answer) - 1];
+    if (!trip) return io.print(`  No trip number ${answer}.`);
+    if (!(await yesNo(io, `Regenerate the analytics for "${trip.name}"? The stored ones are replaced.`))) return io.print('Cancelled.');
+    return computeAnalytics(io, store, trip._id);
+};
+
+// Recompute every saved trip's analytics, one after another; a failure on one doesn't stop the rest
+const regenerateAll = async (io, store) => {
+    const trips = await store.list();
+    if (trips.length === 0) return io.print('\nNo saved trips.');
+    if (!(await yesNo(io, `\nRegenerate analytics for all ${trips.length} saved trip(s)? The stored ones are replaced.`))) return io.print('Cancelled.');
+    for (const [i, trip] of trips.entries()) {
+        io.print(`\n[${i + 1}/${trips.length}] ${trip.name}`);
+        await computeAnalytics(io, store, trip._id);
+    }
+    return io.print('\nDone.');
+};
+
 const MENU = [
     ['Add a trip', addTrip],
     ['List saved trips', async (io, store) => { await listTrips(io, store); }],
-    ['Remove a trip', removeTrip]
+    ['Remove a trip', removeTrip],
+    ['Regenerate one trip\'s analytics', regenerateOne],
+    ['Regenerate all trips\' analytics', regenerateAll]
 ];
 
 // ── Exported functions ──────────────────────────────────────────────────────
@@ -165,8 +213,9 @@ const createMongoStore = () => {
             ]);
             return { count, first: first && first.receivedAt, last: last && last.receivedAt };
         },
-        list: () => SavedTrip.find({ isDeleted: { $ne: true } }).sort({ startTime: 1 }).lean().exec(),
+        list: () => SavedTrip.find({ isDeleted: { $ne: true } }, { analytics: 0 }).sort({ startTime: 1 }).lean().exec(),
         create: (doc) => SavedTrip.create(doc),
+        computeAnalytics: (id) => require('../persistence/tripAnalyticsRunner').computeAndStore(id),
         softDelete: (id) => SavedTrip.updateOne({ _id: id }, { $set: { isDeleted: true } })
     };
 };
