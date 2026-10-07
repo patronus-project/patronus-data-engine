@@ -5,7 +5,7 @@ import KpiCard from './KpiCard'
 import InfoModal from './InfoModal'
 import AutoRefreshBar from './AutoRefreshBar'
 import HeaderActions from './HeaderActions'
-import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs, getExtSpeedKmh, getTelemetryStatus, getElapsedParts } from './utils'
+import { getTopKpis, getBreadcrumb, getExtBreadcrumb, getTrackPoints, getKpiLabel, getKpiUnit, extractKpiMap, getAlertLevel, getExtSyncTs, getExtSpeedKmh, getTelemetryStatus, getElapsedParts } from './utils'
 import KpiHero from './KpiHero'
 
 
@@ -70,6 +70,8 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, f
   const useExtGps = activeSource === 'ext' && (forceExt || extBreadcrumb.length > 0)
   const breadcrumb = useExtGps ? extBreadcrumb : obdBreadcrumb
   const displayedSource = useExtGps ? 'ext' : 'obd'
+  // Track mode: every record in the live history, oldest first, un-thinned (the line is never drawn live)
+  const trackPoints = useMemo(() => getTrackPoints([...history].reverse(), useExtGps ? extMap : null), [history, extMap, useExtGps])
 
   const heading = useMemo(() => {
     if (displayedSource === 'ext' && history.length > 0) {
@@ -130,7 +132,7 @@ export default function LandingPage({ history, extMap, activeSource, forceObd, f
       ) : (
       <div className="landing">
         <div className="map-section">
-          <MapView points={breadcrumb} heading={heading} />
+          <MapView points={breadcrumb} trackPoints={trackPoints} heading={heading} />
           <div className={`map-source-badge ${displayedSource}`}>
             {displayedSource === 'ext' ? 'Ext GPS' : 'OBD GPS'}
           </div>

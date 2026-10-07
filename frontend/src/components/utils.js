@@ -203,6 +203,27 @@ export function getBreadcrumb(history) {
   return points
 }
 
+// Full-resolution GPS trail for the map's Track mode: one entry per record, in the same order, with no thinning.
+// Each entry is [lat, lng] or null where that record has no fix, so entry i always belongs to records[i]
+// (the map keys its dots by position, which keeps a sliding window cheap to redraw).
+// extMap given → ext GPS coordinates; omitted → the OBD (Torque) coordinates.
+export function getTrackPoints(records, extMap) {
+  return records.map(record => {
+    let lat, lng
+    if (extMap) {
+      const syncTs = getExtSyncTs(record.time)
+      const gps = syncTs != null ? extMap.get(syncTs)?.extGps : null
+      lat = parseFloat(gps?.lat)
+      lng = parseFloat(gps?.lon)
+    } else {
+      const kpiMap = extractKpiMap(record)
+      lat = parseFloat(kpiMap['kff1006'])
+      lng = parseFloat(kpiMap['kff1005'])
+    }
+    return isNaN(lat) || isNaN(lng) ? null : [lat, lng]
+  })
+}
+
 // Build a Map<sync_ts, extDoc> from ext-history records
 export function buildExtMap(extRecords) {
   const map = new Map()
