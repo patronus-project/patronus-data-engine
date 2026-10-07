@@ -714,3 +714,4 @@ Hooks
 18. **Ext GPS `spd` is m/s.** Multiply by 3.6 for km/h comparison and for the KPI Hero "Speed (GPS)" gauge. Display raw in Ext tab.
 19. **`displayedSource` is not the same as `activeSource`.** `activeSource` is the evaluator/toggle decision; `displayedSource` accounts for data availability and may fall back to OBD even when ext is preferred.
 20. **Heading uses ext `dir` only when `displayedSource === 'ext'`.** Computed after `displayedSource` — order of hook declarations matters.
+21. **Toolbars wrap; they never overflow.** Header, trip selector, replay stats and playback controls must fit the viewport at 360 px wide. Under 768 px the trip selector stacks (mode, dates, chips) and the page grows with its content (`min-height`, not a fixed `100vh`). Verify at 360 / 390 / 768 / 1024 / 1366 px: `document.documentElement.scrollWidth` must equal `clientWidth`.
