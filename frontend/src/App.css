@@ -209,6 +209,7 @@
 
 .map-section {
   position: relative;
+  isolation: isolate; /* also holds the GPS-source badge (z-index 1000) under any modal */
   width: 40%;
   flex-shrink: 0;
   border-right: 1px solid #e0e0e0;
@@ -589,6 +590,9 @@
   position: relative;
   height: 100%;
   width: 100%;
+  /* The compass, mode toggle and Leaflet controls use z-index 1000+. Own stacking context: those numbers only
+     compete inside the map, never with a modal drawn over the page. */
+  isolation: isolate;
 }
 
 .map-mode-toggle {
@@ -1115,6 +1119,8 @@
 .ti-tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .ti-tag { font-size: 0.66rem; padding: 1px 7px; border-radius: 10px; background: #dde0ee; color: #1a1a2e; }
 
+.ti-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
 .ti-share {
   min-width: 112px; /* "Link copied" is wider than "Share"; the button must not resize */
   justify-content: center;
@@ -1143,5 +1149,35 @@
 }
 
 @media (max-width: 768px) {
-  .trip-info { grid-column: 1 / -1; flex: none; width: 100%; padding: 8px 0 0; border-left: none; border-top: 1px solid #c8cce0; align-items: flex-start; }
+  /* The name, description and buttons come first on a phone, so the stats (and the live Progress group) are what sits right above the map */
+  .trip-info { order: -1; grid-column: 1 / -1; flex: none; width: 100%; padding: 0 0 8px; border-left: none; border-top: none; border-bottom: 1px solid #c8cce0; align-items: flex-start; }
+}
+
+/* ── Collapsible trip picker, and a phone replay that keeps its controls in reach ── */
+.trip-selector-wrap { flex-shrink: 0; background: #fff; }
+
+.tsel-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: #1a1a2e;
+}
+.tsel-bar:hover { background: #f7f8fc; }
+.tsel-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #888; }
+.tsel-summary { flex: 1; min-width: 0; font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsel-bar svg { flex-shrink: 0; color: #888; }
+
+@media (max-width: 768px) {
+  .tsel-bar { padding: 8px 12px; }
+
+  /* The playback bar stays at the top while the page scrolls down to the map and KPIs, so Pause is always reachable */
+  .replay-controls { position: sticky; top: 0; z-index: 900; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08); }
 }

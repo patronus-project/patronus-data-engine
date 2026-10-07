@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Droplet, Cpu, Navigation, Zap, MapPin, Activity, BookOpen, Car, Radio, CircleHelp, Satellite } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useReplayStream } from '../hooks/useReplayStream'
-import { extractKpiMap, getPathPoints, getExtPathPoints, getTrackPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs, getExtSpeedKmh } from './utils'
+import { formatDateShort, extractKpiMap, getPathPoints, getExtPathPoints, getTrackPoints, getKpiLabel, getKpiUnit, getAlertLevel, buildExtMap, getExtSyncTs, getExtSpeedKmh } from './utils'
 import { useExtGpsToggle } from '../hooks/useExtGpsToggle'
 import { useTripDays } from '../hooks/useTripDays'
 import { useTripProgress } from '../hooks/useTripProgress'
@@ -10,6 +10,7 @@ import { dayInfoAt, SHORT_BREAK_MS } from './tripDays'
 import { tripKey, showTripInUrl } from './shareLink'
 import KpiHero from './KpiHero'
 import InfoModal from './InfoModal'
+import TripSummaryModal from './summary/TripSummaryModal'
 import TripSelector from './TripSelector'
 import ReplayHeader from './ReplayHeader'
 import ReplayControls from './ReplayControls'
@@ -19,6 +20,9 @@ import KpiCard from './KpiCard'
 const TABS = ['fuel', 'engine', 'trip', 'performance', 'gps', 'sensors', 'misc', 'extgps']
 const TAB_LABELS = { fuel: 'Fuel', engine: 'Engine', trip: 'Trip', performance: 'Perf', gps: 'GPS', sensors: 'Sensors', misc: 'Unknown', extgps: 'Ext' }
 const TAB_ICONS  = { fuel: <Droplet size={16}/>, engine: <Cpu size={16}/>, trip: <Navigation size={16}/>, performance: <Zap size={16}/>, gps: <MapPin size={16}/>, sensors: <Activity size={16}/>, misc: <CircleHelp size={16}/>, extgps: <Satellite size={16}/> }
+
+// On a phone, Play scrolls so the map's centre sits this far down the screen (0 = top, 1 = bottom)
+const MAP_CENTRE_FROM_TOP = 0.5
 
 // Track mode on the map shows this many of the most recent frames, one dot per data point
 const TRACK_WINDOW = 600
@@ -31,7 +35,10 @@ const rangeTrip = (link) => ({ tripId: null, startTime: link.start, endTime: lin
 
 export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kpiMeta, profileData, onExit, initialLink }) {
   const [mode, setMode] = useState('trips')
-  const [modal, setModal] = useState(null) // null | 'names' | 'profile'
+  const [selectorCollapsed, setSelectorCollapsed] = useState(false)
+  const mapSectionRef = useRef(null)
+  const focusMapPending = useRef(false)   // a phone asked to focus the map before there was any KPI content to scroll through
+  const [modal, setModal] = useState(null) // null | 'names' | 'profile' | 'summary'
 
   // Trips mode state
   // Landing on a shared link lists trips from the linked trip's start day through today
@@ -66,7 +73,7 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
 
   const {
     records, total, frame, playing, speed, buffering,
-    currentRecord, play, pause, seek, setSpeed,
+    currentRecord, extMap, play, pause, seek, setSpeed,
   } = useReplayStream(source)
 
   // The timeline gives every frame's time up front, so the day shows even while a far seek is still buffering
@@ -89,7 +96,6 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
   const [activeTab, setActiveTab] = useState('fuel')
 
   const [forceObd, toggleObdOverride, forceExt, toggleExtOverride] = useExtGpsToggle()
-  const [extMap, setExtMap] = useState(new Map())
   const sourceKey = source ? `${source.start}|${source.end}` : ''
 
   // Sticky KPI map — keeps last-seen value per key, marks missing keys as stale
@@ -112,62 +118,6 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     () => Object.entries(stickyKpis).map(([key, { value, stale }]) => ({ key, value, stale })),
     [stickyKpis]
   )
-
-  const extNextOffsetRef = useRef(0)
-  const extFetchingRef = useRef(false)
-  
-  const fetchExtPage = useCallback((src, offset) => {
-    const params = new URLSearchParams({
-      start: src.start,
-      end: src.end,
-      offset,
-      limit: 100,
-    })
-    if (extFetchingRef.current) return // already fetching, skip
-    extFetchingRef.current = true
-    fetch(`/api/obd2/ext-history/paged?${params}`)
-      .then(r => r.json())
-      .then(data => {
-        setExtMap(prev => {
-          const updated = new Map(prev)
-          data.records.forEach(rec => {
-            updated.set(rec.sync_ts, rec)
-          })
-          return updated
-        })
-        extNextOffsetRef.current = offset + data.records.length
-      })
-      .catch(() => {})
-      .finally(() => { extFetchingRef.current = false })
-  }, [])
-  
-
-  // Fetch ext-history when source changes
-  useEffect(() => {
-    if (!source) {
-      setExtMap(new Map())
-      extNextOffsetRef.current = 0
-      extFetchingRef.current = false
-      return
-    }
-    extNextOffsetRef.current = 0
-    extFetchingRef.current = false
-    fetchExtPage(source, 0)
-  }, [sourceKey, fetchExtPage])
-
-  // Prefetch next ext page when buffer is growing — keep ext-history in sync with OBD pages
-  useEffect(() => {
-    if (!source || records.length === 0) return
-    
-    const OBD_PAGE_SIZE = 100 // must match useReplayStream PAGE_SIZE
-    const numLoadedOBDPages = Math.floor(records.length / OBD_PAGE_SIZE)
-    const targetExtOffset = numLoadedOBDPages * OBD_PAGE_SIZE
-    
-    // Fetch next ext page if OBD has loaded more pages than ext
-    if (extNextOffsetRef.current < targetExtOffset) {
-      fetchExtPage(source, extNextOffsetRef.current)
-    }
-  }, [records.length, source, fetchExtPage])
 
   const extGpsEntries = useMemo(() => {
     if (!currentRecord?.time) return []
@@ -213,6 +163,37 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     }
     return parseFloat(currentKpiMap['kff1007']) || 0
   }, [displayedSource, currentRecord, extMap, currentKpiMap])
+
+  // Scrolls the page so the map's centre sits half way down the screen: the trip stats above it stay partly in
+  // view, the headline KPIs and the first KPI cards show below it.
+  const scrollToMap = useCallback(() => {
+    // two frames: let any layout change (the picker folding away, KPIs appearing) settle before measuring where the map is
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const map = mapSectionRef.current
+      if (!map) return
+      const rect = map.getBoundingClientRect()
+      const centre = window.scrollY + rect.top + rect.height / 2
+      window.scrollTo({ top: Math.max(0, centre - window.innerHeight * MAP_CENTRE_FROM_TOP), behavior: 'smooth' })
+    }))
+  }, [])
+
+  // The page is only as tall as its content, and the KPI section is empty until the first record with sensor values
+  // arrives (frame 0 is often just a metadata ping), so on a phone the scroll waits for it rather than being clamped short.
+  useEffect(() => {
+    if (focusMapPending.current && currentKpis.length > 0) {
+      focusMapPending.current = false
+      scrollToMap()
+    }
+  }, [currentKpis.length, scrollToMap])
+
+  // Starting playback folds the trip picker away; on a phone it also brings the map into focus
+  function handlePlay() {
+    setSelectorCollapsed(true)
+    play()
+    if (!window.matchMedia('(max-width: 768px)').matches) return
+    if (currentKpis.length > 0) scrollToMap()
+    else focusMapPending.current = true
+  }
 
   function handleModeChange(next) {
     setMode(next)
@@ -264,6 +245,11 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
     return null
   }, [mode, selectedTrip, activeCustom, total])
 
+  // What the collapsed picker bar says: the selected trip's name, or its dates
+  const selectorSummary = !tripSummary
+    ? (mode === 'trips' ? 'Select a trip' : 'Pick a time range')
+    : (tripSummary.name || `${formatDateShort(tripSummary.startTime)} → ${formatDateShort(tripSummary.endTime)}`)
+
   const ids = useMemo(() => [...new Set([
     ...Object.keys(kpiMeta.shortNames),
     ...Object.keys(kpiMeta.fullNames),
@@ -295,6 +281,9 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
       </div>
 
       <TripSelector
+        collapsed={selectorCollapsed}
+        onToggleCollapsed={() => setSelectorCollapsed(c => !c)}
+        summaryText={selectorSummary}
         mode={mode}
         onModeChange={handleModeChange}
         trips={trips}
@@ -314,20 +303,20 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
 
       {source ? (
         <>
-          <ReplayHeader trip={tripSummary} frame={frame} total={total} frameMs={frameMs} dayInfo={dayInfo} tripTimeMs={tripTimeMs} lastBreakMs={lastBreakMs} progress={progress} />
+          <ReplayHeader trip={tripSummary} frame={frame} total={total} frameMs={frameMs} dayInfo={dayInfo} tripTimeMs={tripTimeMs} lastBreakMs={lastBreakMs} progress={progress} onOpenSummary={() => setModal('summary')} />
           <ReplayControls
             playing={playing}
             frame={frame}
             total={total}
             speed={speed}
             buffering={buffering}
-            onPlay={play}
+            onPlay={handlePlay}
             onPause={pause}
             onSeek={seek}
             onSpeedChange={setSpeed}
           />
           <div className="landing">
-            <div className="map-section">
+            <div className="map-section" ref={mapSectionRef}>
               <MapView points={mapPoints} trackPoints={trackPoints} trackOffset={trackOffset} showTrackLine={!playing} heading={heading} />
               <div className={`map-source-badge ${displayedSource}`}>
                 {displayedSource === 'ext' ? 'Ext GPS' : 'OBD GPS'}
@@ -389,6 +378,9 @@ export default function ReplayPage({ keyMap, tabMap, staticUnitMap, alertMap, kp
         </div>
       )}
 
+      {modal === 'summary' && selectedTrip && selectedTrip.savedTripId && (
+        <TripSummaryModal tripId={selectedTrip.savedTripId} title={selectedTrip.name} onClose={() => setModal(null)} />
+      )}
       {modal === 'names' && (
         <InfoModal title="Units & Names" onClose={() => setModal(null)}>
           <table className="modal-table">

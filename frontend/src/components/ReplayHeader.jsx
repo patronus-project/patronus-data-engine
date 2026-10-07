@@ -26,7 +26,7 @@ const Group = ({ children }) => <div className="rh-group">{children}</div>
 // progress: { km, percent } — kilometres travelled so far and % of the trip done (by trip time).
 // frameMs: the playhead's time (from the trip timeline, so it is known even while a far seek is still buffering)
 // tripTimeMs: driving time so far across all days, long breaks left out. lastBreakMs: the most recent pause of 30 min+.
-export default function ReplayHeader({ trip, frame, total, frameMs, dayInfo, tripTimeMs, lastBreakMs, progress }) {
+export default function ReplayHeader({ trip, frame, total, frameMs, dayInfo, tripTimeMs, lastBreakMs, progress, onOpenSummary }) {
   if (!trip) return null
 
   const elapsed = frameMs != null ? frameMs - trip.startTime : null
@@ -53,7 +53,7 @@ export default function ReplayHeader({ trip, frame, total, frameMs, dayInfo, tri
         <Stat label="Distance" value={progress.km != null ? `${progress.km.toFixed(1)} km` : DASH} />
         <Stat label="Progress" value={progress.percent != null ? `${Math.round(progress.percent)}%` : DASH} />
       </Group>
-      <TripInfo trip={trip} />
+      <TripInfo trip={trip} onOpenSummary={onOpenSummary} />
     </div>
   )
 }

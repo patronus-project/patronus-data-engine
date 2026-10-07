@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { tripKey } from './shareLink'
 
 function fmtDate(dateStr) {
@@ -81,14 +82,22 @@ function CustomRangeMode({ customStart, customEnd, onCustomStart, onCustomEnd, o
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+// collapsed / onToggleCollapsed: the selection UI folds away to a one-line bar (summaryText says what is selected)
 export default function TripSelector({
+  collapsed, onToggleCollapsed, summaryText,
   mode, onModeChange,
   trips, tripsLoading, selectedKey, onSelectTrip,
   dateFrom, dateTo, onDateFrom, onDateTo,
   customStart, customEnd, onCustomStart, onCustomEnd, onLoadCustom,
 }) {
   return (
-    <div className="trip-selector">
+    <div className="trip-selector-wrap">
+      <button className="tsel-bar" onClick={onToggleCollapsed} aria-expanded={!collapsed} aria-label={collapsed ? 'Show trip selection' : 'Hide trip selection'}>
+        <span className="tsel-title">Trips</span>
+        <span className="tsel-summary">{summaryText}</span>
+        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      </button>
+      {!collapsed && <div className="trip-selector">
       <div className="mode-toggle">
         <button
           className={`mode-btn${mode === 'trips' ? ' active' : ''}`}
@@ -124,6 +133,7 @@ export default function TripSelector({
           onLoad={onLoadCustom}
         />
       )}
+    </div>}
     </div>
   )
 }
