@@ -1,12 +1,12 @@
 const { connect } = require('./mongoose');
 const Obd2Event = require('./models/obd2Event');
 const ObdWithExtGps = require('./models/obdWithExtGps');
+const SavedTrip = require('./models/savedTrip');
+const { groupTrips } = require('./tripGrouping');
+const { ANALYTICS_VERSION } = require('./analytics');
 const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
-// No OBD data for 24 h ends a trip. Shorter silences are breaks inside it: the UI calls 30 min–4 h a short break
-// and 4 h–3 days a long break / overnight stop (getTelemetryStatus in frontend/src/components/utils.js).
-const TRIP_GAP_MS = 24 * 60 * 60 * 1000;
 
 function toDocument(query) {
     const payload = query || {};
@@ -41,33 +41,6 @@ function buildDateWhere(start, end, field) {
     return where;
 }
 
-function detectTrips(records) {
-    if (records.length === 0) return [];
-
-    const trips = [];
-    let tripStart = records[0].receivedAt;
-    let tripEnd   = records[0].receivedAt;
-    let count     = 1;
-
-    for (let i = 1; i < records.length; i++) {
-        const gap = new Date(records[i].receivedAt) - new Date(records[i - 1].receivedAt);
-        if (gap > TRIP_GAP_MS) {
-            trips.push({ startTime: tripStart, endTime: tripEnd, recordCount: count,
-                durationMs: new Date(tripEnd) - new Date(tripStart) });
-            tripStart = records[i].receivedAt;
-            count     = 0;
-        }
-        tripEnd = records[i].receivedAt;
-        count++;
-    }
-    trips.push({ startTime: tripStart, endTime: tripEnd, recordCount: count,
-        durationMs: new Date(tripEnd) - new Date(tripStart) });
-
-    return trips.reverse().map(function (t, i) {
-        return Object.assign({ tripId: 'trip_' + i }, t);
-    });
-}
-
 async function persistObd2Query(query, userAgent) {
     if (!isAllowedUserAgent(userAgent)) {
         return { skipped: true, reason: 'user-agent-not-allowed' };
@@ -94,16 +67,54 @@ async function findObd2Events(filters) {
     return Obd2Event.find(where).sort({ receivedAt: -1 }).limit(limit).lean().exec();
 }
 
-// Trip summary — lightweight, only receivedAt fetched
+// Every saved (hand-defined) trip, oldest first. The analytics blob stays out of lists; analyticsReady says it exists.
+async function findSavedTrips() {
+    const trips = await SavedTrip.find({ isDeleted: { $ne: true } }, { analytics: 0 }).sort({ startTime: 1 }).lean().exec();
+    return trips.map((t) => Object.assign({}, t, { analyticsReady: t.analyticsVersion === ANALYTICS_VERSION }));
+}
+
+// Trip summary — lightweight, only receivedAt fetched.
+// Every saved trip is always listed, whatever the date window (they are curated, so they are never filtered out);
+// they claim their records first. The records inside the window that no saved trip owns are grouped by silence.
 async function findTrips({ start, end } = {}) {
     await connect();
-    const where = buildDateWhere(start, end, 'receivedAt');
+    const saved = await findSavedTrips();
+    const wanted = [buildDateWhere(start, end, 'receivedAt')]
+        .concat(saved.map((s) => buildDateWhere(s.startTime, s.endTime, 'receivedAt')));
     const records = await Obd2Event
-        .find(where, { receivedAt: 1 })
+        .find({ $or: wanted }, { receivedAt: 1 })
         .sort({ receivedAt: 1 })
         .lean()
         .exec();
-    return detectTrips(records);
+    return groupTrips(records, saved);
+}
+
+// One saved trip as a /api/trips entry (actual first/last record inside its range), or null if it has no records
+async function findSavedTripById(id) {
+    await connect();
+    if (!/^[a-f0-9]{24}$/i.test(String(id))) return null;
+    const found = await SavedTrip.findOne({ _id: id, isDeleted: { $ne: true } }, { analytics: 0 }).lean().exec();
+    if (!found) return null;
+    const saved = Object.assign({}, found, { analyticsReady: found.analyticsVersion === ANALYTICS_VERSION });
+    const records = await Obd2Event
+        .find(buildDateWhere(saved.startTime, saved.endTime, 'receivedAt'), { receivedAt: 1 })
+        .sort({ receivedAt: 1 })
+        .lean()
+        .exec();
+    const trips = groupTrips(records, [saved]);
+    return trips.find((t) => t.savedTripId === String(saved._id)) || null;
+}
+
+// Every OBD receive time in a window as epoch ms — a few bytes each, so the UI can find day boundaries
+// of a multi-day trip without downloading the full records.
+async function findObdTimeline({ start, end }) {
+    await connect();
+    const rows = await Obd2Event
+        .find(buildDateWhere(start, end, 'receivedAt'), { receivedAt: 1 })
+        .sort({ receivedAt: 1 })
+        .lean()
+        .exec();
+    return rows.map((r) => r.receivedAt.getTime());
 }
 
 // Paged detail — sliding window for replay
@@ -142,6 +153,8 @@ module.exports = {
     persistObd2Query,
     findObd2Events,
     findTrips,
+    findSavedTripById,
+    findObdTimeline,
     findObd2EventsPaged,
     findExtEvents,
     findExtEventsPaged,

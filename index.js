@@ -5,6 +5,7 @@ var http = require('http');
 var bodyParser = require('body-parser');
 const { ingestExternalGps } = require('./extGpsController');
 const engineWatch = require('./engineWatch');
+const { getTripAnalytics, ensureMissingTripAnalytics } = require('./persistence/tripAnalyticsRunner');
 // var ssl = require('./security');
 app = express();
 var keymapper =  require('./data.json');
@@ -12,7 +13,7 @@ var keymapper =  require('./data.json');
 port = process.env.PORT;
 // sslport = process.env.SSLPORT || 3443;
 const wsocketserver= require('./websocketserver');
-const { persistObd2Query, findObd2Events, findObd2EventsPaged, findTrips, findExtEvents, findExtEventsPaged } = require('./persistence/obd2Persistence');
+const { persistObd2Query, findObd2Events, findObd2EventsPaged, findTrips, findSavedTripById, findObdTimeline, findExtEvents, findExtEventsPaged } = require('./persistence/obd2Persistence');
 console.log(`listening on port ${port}`);
 
 var server = http.createServer(app).listen(port);
@@ -81,6 +82,40 @@ function allowAll(req, res, next) {
                 .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
 
+    // One hand-saved trip, so a shared replay link resolves without knowing the list's date range
+    app.route('/api/trips/saved/:id')
+        .get(function (req, res) {
+            findSavedTripById(req.params.id)
+                .then(function (trip) {
+                    if (!trip) return res.status(404).json({ error: 'Saved trip not found' });
+                    res.status(200).json(trip);
+                })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    // A saved trip's analytics (the Trip Summary). 202 while they are being computed: the page polls.
+    app.route('/api/trips/saved/:id/analytics')
+        .get(function (req, res) {
+            getTripAnalytics(req.params.id)
+                .then(function (result) {
+                    if (!result) return res.status(404).json({ error: 'Saved trip not found' });
+                    res.status(result.status === 'ready' ? 200 : 202).json(result);
+                })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    // Receive times (epoch ms) of every OBD record in a window — used to find the days of a multi-day trip
+    app.route('/api/obd2/timeline')
+        .get(function (req, res) {
+            const { start, end } = req.query;
+            if (!start || !end || isNaN(new Date(start)) || isNaN(new Date(end))) {
+                return res.status(400).json({ error: 'start and end (ISO) are required' });
+            }
+            findObdTimeline({ start, end })
+                .then(function (times) { res.status(200).json(times); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
     app.route('/api/obd2/ext-history/paged')
         .get(function (req, res) {
             const { start, end, offset, limit } = req.query;
@@ -122,7 +157,13 @@ engineWatch.start();
 
 const { connect } = require('./persistence/mongoose');
 connect()
-    .then(function () { console.log('MongoDB connected OK'); })
+    .then(function () {
+        console.log('MongoDB connected OK');
+        // Any saved trip without current analytics gets them computed, in the background; nothing waits on this
+        ensureMissingTripAnalytics()
+            .then(function (n) { if (n) console.log('trip analytics computed for', n, 'saved trip(s)'); })
+            .catch(function (err) { console.error('trip analytics sweep failed:', err.message || err); });
+    })
     .catch(function (err) {
         console.error('MongoDB connection FAILED:', err.message);
         engineWatch.recordMongoConnectFailure(err);

@@ -209,6 +209,7 @@
 
 .map-section {
   position: relative;
+  isolation: isolate; /* also holds the GPS-source badge (z-index 1000) under any modal */
   width: 40%;
   flex-shrink: 0;
   border-right: 1px solid #e0e0e0;
@@ -589,6 +590,9 @@
   position: relative;
   height: 100%;
   width: 100%;
+  /* The compass, mode toggle and Leaflet controls use z-index 1000+. Own stacking context: those numbers only
+     compete inside the map, never with a modal drawn over the page. */
+  isolation: isolate;
 }
 
 .map-mode-toggle {
@@ -762,6 +766,19 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 58px; /* values change as the replay plays; a floor keeps neighbours from shifting */
+}
+
+/* A group of related stats; the next group is divided from it on wide screens */
+.rh-group {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.rh-group + .rh-group {
+  padding-left: 24px;
+  border-left: 1px solid #c8cce0;
 }
 
 .rh-label {
@@ -775,6 +792,8 @@
   font-size: 0.88rem;
   font-weight: 600;
   color: #1a1a2e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .rh-divider {
@@ -1012,4 +1031,153 @@
   font-weight: 600;
   color: #1a1a2e;
   word-break: break-all;
+}
+
+/* ── Responsive: headers, trip selector, replay toolbars ─────────────────────
+   Every toolbar row wraps instead of overflowing, so nothing sits past the visible edge. */
+
+/* Narrow desktop / tablet: chips drop to their own row instead of being squeezed or clipped */
+@media (max-width: 1100px) {
+  .trip-selector { flex-wrap: wrap; row-gap: 10px; }
+  .trip-selector > .trip-divider { display: none; }
+  .trip-list { flex: 1 1 100%; }
+  .replay-header { gap: 14px 24px; }
+}
+
+/* Short desktop windows: give the map and KPIs the height back */
+@media (min-width: 769px) and (max-height: 700px) {
+  .app-header { padding: 10px 24px; }
+  .trip-selector, .replay-controls { padding-top: 6px; padding-bottom: 6px; }
+  .replay-header { padding-top: 6px; padding-bottom: 6px; }
+}
+
+@media (max-width: 768px) {
+  /* Pages grow with their content on phones; a fixed 100vh box clips the toolbars below the fold */
+  .page-wrapper { height: auto; min-height: 100vh; min-height: 100dvh; }
+
+  /* Header: title on top, action icons wrap beneath it (home has 6 controls) */
+  .app-header { flex-wrap: wrap; gap: 8px 12px; letter-spacing: 0.5px; }
+  .app-header > span { flex: 1 1 auto; min-width: 0; }
+  .ts-bar { flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+  .header-action-btn { padding: 6px 9px; }
+
+  /* Trip selector: mode toggle, then dates, then chips — each on its own full-width row */
+  .trip-selector { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 12px; overflow: visible; }
+  .mode-toggle { align-self: flex-start; }
+  .date-range { width: 100%; flex-shrink: 1; gap: 8px; flex-wrap: wrap; }
+  .date-range .date-label { flex: 1 1 140px; min-width: 0; }
+  .date-label input[type="date"],
+  .date-label input[type="datetime-local"] { flex: 1; min-width: 0; width: 100%; padding: 8px; font-size: 0.9rem; }
+  .trip-list { flex: 0 0 auto; width: 100%; padding-bottom: 6px; }
+  .trip-chip { padding: 9px 14px; }
+  .custom-range { flex-direction: column; align-items: stretch; gap: 10px; }
+  .custom-range .date-label { justify-content: space-between; }
+  .load-range-btn { align-self: flex-end; padding: 9px 22px; }
+
+  /* Trip summary: compact three-column grid instead of a ragged wrapped line */
+  .replay-header { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 8px 12px; }
+  .rh-divider { display: none; }
+  .rh-group { display: contents; }
+  .rh-group + .rh-group { padding-left: 0; border-left: none; }
+  .rh-stat { min-width: 0; }
+
+  /* Playback: play + scrubber on one row, speed buttons share the row beneath at touch size */
+  .replay-controls { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
+  .rc-play-btn { width: 44px; height: 44px; }
+  .rc-scrubber-wrap { flex: 1 1 120px; min-width: 120px; }
+  .rc-frame-count { min-width: 0; }
+  .rc-speed-group { flex: 1 1 100%; gap: 6px; }
+  .rc-speed-label { margin-right: 2px; }
+  .rc-speed-btn { flex: 1; padding: 9px 0; }
+}
+
+/* ── Trip info (replay header, right end) and saved-trip chips ── */
+/* Takes whatever width the stats leave over; the share button stays pinned to the far right */
+.trip-info {
+  flex: 1 1 260px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding-left: 20px;
+  border-left: 1px solid #c8cce0;
+}
+
+.ti-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+.ti-name { font-size: 0.95rem; font-weight: 700; color: #1a1a2e; }
+.ti-desc { font-size: 0.78rem; color: #555; }
+.ti-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.ti-tag { font-size: 0.66rem; padding: 1px 7px; border-radius: 10px; background: #dde0ee; color: #1a1a2e; }
+
+.ti-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+.ti-share {
+  min-width: 112px; /* "Link copied" is wider than "Share"; the button must not resize */
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid #1a1a2e;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a2e;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ti-share:hover { background: #1a1a2e; color: #fff; }
+
+.trip-chip-name { font-size: 0.78rem; font-weight: 700; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.trip-chip.saved { border-color: #b0b8d8; }
+
+/* Below ~1600px the three stat groups leave no room beside them: the info block takes its own row, divided by a top rule
+   (placed after the base rule so it wins) */
+@media (max-width: 1600px) {
+  .trip-info { flex-basis: 100%; padding: 8px 0 0; border-left: none; border-top: 1px solid #c8cce0; }
+}
+
+@media (max-width: 768px) {
+  /* The name, description and buttons come first on a phone, so the stats (and the live Progress group) are what sits right above the map */
+  .trip-info { order: -1; grid-column: 1 / -1; flex: none; width: 100%; padding: 0 0 8px; border-left: none; border-top: none; border-bottom: 1px solid #c8cce0; align-items: flex-start; }
+}
+
+/* ── Collapsible trip picker, and a phone replay that keeps its controls in reach ── */
+.trip-selector-wrap { flex-shrink: 0; background: #fff; }
+
+.tsel-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: #1a1a2e;
+}
+.tsel-bar:hover { background: #f7f8fc; }
+.tsel-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #888; }
+.tsel-summary { flex: 1; min-width: 0; font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsel-bar svg { flex-shrink: 0; color: #888; }
+
+@media (max-width: 768px) {
+  .tsel-bar { padding: 8px 12px; }
+
+  /* The playback bar stays at the top while the page scrolls down to the map and KPIs, so Pause is always reachable */
+  .replay-controls { position: sticky; top: 0; z-index: 900; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08); }
 }

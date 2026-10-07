@@ -1,23 +1,66 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from 'react-leaflet'
 import { useRoutedPath } from '../hooks/useRoutedPath'
 import 'leaflet/dist/leaflet.css'
 
-function MapController({ points, mode }) {
+// Track mode opens at a regional zoom (about 25 km across) rather than street level;
+// after that the person's own zoom is left alone.
+const TRACK_ZOOM = 12
+const NO_POINTS = []
+
+// Index of the newest entry that has a fix (trackPoints can hold nulls), or -1
+const lastFix = (trackPoints) => {
+  for (let i = trackPoints.length - 1; i >= 0; i--) if (trackPoints[i]) return i
+  return -1
+}
+
+function MapController({ points, trackPoints, mode }) {
   const map = useMap()
+  const trackStarted = useRef(false)
+
+  // Every switch into Track re-centres once at TRACK_ZOOM
+  useEffect(() => { trackStarted.current = false }, [mode])
 
   useEffect(() => {
-    if (points.length === 0) return
-    if (mode === 'route') {
-      // Always fit all points — latest pin is always in view, zoom adapts
-      map.fitBounds(points, { padding: [32, 32] })
-    } else {
-      // Track: pan to latest pin only, never touch zoom
-      map.panTo(points[points.length - 1])
-    }
+    if (mode !== 'route' || points.length === 0) return
+    // Full Route: always fit all points — latest pin is always in view, zoom adapts
+    map.fitBounds(points, { padding: [32, 32] })
   }, [points, mode, map])
 
+  useEffect(() => {
+    if (mode !== 'track') return
+    const i = lastFix(trackPoints)
+    if (i < 0) {
+      trackStarted.current = false
+      return
+    }
+    if (!trackStarted.current) {
+      map.setView(trackPoints[i], TRACK_ZOOM, { animate: false })
+      trackStarted.current = true
+    } else {
+      // Follow the newest point without touching the zoom
+      map.panTo(trackPoints[i], { animate: true, duration: 0.3 })
+    }
+  }, [trackPoints, mode, map])
+
   return null
+}
+
+// Track mode: the rolling window of recent points as dots, the newest in red. Dots are keyed by their position in the
+// record list (trackOffset + i), so as the window slides only the ends change. The line joining them is only drawn
+// when showLine is true (replay paused) — while points are streaming in it is just noise.
+const TrackLayer = ({ trackPoints, trackOffset, showLine }) => {
+  const last = lastFix(trackPoints)
+  if (last < 0) return null
+  return (
+    <>
+      {showLine && <Polyline positions={trackPoints.filter(Boolean)} color="#7c3aed" weight={4} opacity={0.9} />}
+      {trackPoints.map((pos, i) => pos && i !== last && (
+        <CircleMarker key={trackOffset + i} center={pos} radius={3} color="#3498db" fillColor="#3498db" fillOpacity={0.9} weight={1} />
+      ))}
+      <CircleMarker key="current" center={trackPoints[last]} radius={7} color="#e74c3c" fillColor="#e74c3c" fillOpacity={0.9} />
+    </>
+  )
 }
 
 function Compass({ heading }) {
@@ -48,18 +91,24 @@ function Compass({ heading }) {
   )
 }
 
-export default function MapView({ points, heading = 0 }) {
+// points: the thinned whole-route path (Full Route mode).
+// trackPoints: full-resolution recent trail, one entry per record ([lat, lng] or null), trackOffset = index of the first
+// record it covers (Track mode, the default). showTrackLine: also join the track dots with a line (replay paused).
+export default function MapView({ points, trackPoints = NO_POINTS, trackOffset = 0, showTrackLine = false, heading = 0 }) {
   const defaultCenter = [20, 0]
-  const hasPoints = points.length > 0
-  const { routed, loading } = useRoutedPath(points)
+  const [mode, setMode] = useState('track')
+  const trackLast = lastFix(trackPoints)
+  const hasPoints = points.length > 0 || trackLast >= 0
+  // Road-snapping (OSRM) is only needed for Full Route, so Track mode doesn't spend requests on it
+  const { routed, loading } = useRoutedPath(mode === 'route' ? points : NO_POINTS)
   const path = routed.length > 0 ? routed : points
-  const [mode, setMode] = useState('route')
+  const start = trackLast >= 0 ? trackPoints[trackLast] : points.length > 0 ? points[0] : defaultCenter
 
   return (
     <div className="map-wrapper">
       <MapContainer
-        center={hasPoints ? points[0] : defaultCenter}
-        zoom={13}
+        center={start}
+        zoom={TRACK_ZOOM}
         style={{ height: '100%', width: '100%' }}
         scrollWheelZoom={false}
       >
@@ -67,9 +116,10 @@ export default function MapView({ points, heading = 0 }) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {hasPoints && (
+        {hasPoints && <MapController points={points} trackPoints={trackPoints} mode={mode} />}
+        {mode === 'track' && <TrackLayer trackPoints={trackPoints} trackOffset={trackOffset} showLine={showTrackLine} />}
+        {mode === 'route' && points.length > 0 && (
           <>
-            <MapController points={points} mode={mode} />
             <Polyline positions={path} color="#7c3aed" weight={4} opacity={loading ? 0.4 : 0.9} />
             {points.map((pos, i) => (
               <CircleMarker

@@ -9,9 +9,11 @@ function defaultRange() {
   }
 }
 
-export function useTrips() {
+// initialFrom ("YYYY-MM-DD"): open the list from that day instead of 7 days back, e.g. when landing on a shared trip link.
+// The range always runs to the end of today.
+export function useTrips(initialFrom) {
   const range = defaultRange()
-  const [dateFrom, setDateFrom] = useState(range.start)
+  const [dateFrom, setDateFrom] = useState(initialFrom || range.start)
   const [dateTo, setDateTo] = useState(range.end)
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(false)

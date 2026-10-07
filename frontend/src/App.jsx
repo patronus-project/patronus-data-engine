@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import LandingPage from './components/LandingPage'
 import KpiDetail from './components/KpiDetail'
 import ReplayPage from './components/ReplayPage'
+import { parseReplayLink } from './components/shareLink'
 import { getKpiMeta, getProfileData, buildExtMap, fetchJsonArray } from './components/utils'
 import { useGpsEvaluator } from './hooks/useGpsEvaluator'
 import { useExtGpsToggle } from './hooks/useExtGpsToggle'
@@ -17,7 +18,9 @@ export default function App() {
   const [kpiMeta, setKpiMeta] = useState({ defaultUnits: {}, userUnits: {}, shortNames: {}, fullNames: {} })
   const [profileData, setProfileData] = useState([])
   const [selectedKpi, setSelectedKpi] = useState(null)
-  const [view, setView] = useState('live') // 'live' | 'replay'
+  // A shared /replay?... link opens straight into that replay; read once, at load
+  const [initialLink, setInitialLink] = useState(() => parseReplayLink(window.location))
+  const [view, setView] = useState(initialLink ? 'replay' : 'live') // 'live' | 'replay'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   // Once any poll has succeeded, a later failure keeps the last good data on screen instead of the error page
@@ -82,7 +85,7 @@ export default function App() {
   if (error && !hasLoaded) return <div className="state-msg error">Error: {error} — retrying every 10s</div>
 
   if (view === 'replay') {
-    return <ReplayPage history={history} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} onExit={() => setView('live')} />
+    return <ReplayPage history={history} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} initialLink={initialLink} onExit={() => { window.history.replaceState(null, '', '/'); setInitialLink(null); setView('live') }} />
   }
 
   if (selectedKpi) {
@@ -100,5 +103,5 @@ export default function App() {
 
   const lastData = history.length > 0 ? new Date(history[0].receivedAt) : null
 
-  return <LandingPage history={history} extMap={extMap} activeSource={activeSource} forceObd={forceObd} forceExt={forceExt} onToggleObdOverride={toggleObdOverride} onToggleExtOverride={toggleExtOverride} gpsWarning={gpsWarning} pollError={error} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastData={lastData} onReplay={() => setView('replay')} />
+  return <LandingPage history={history} extMap={extMap} activeSource={activeSource} forceObd={forceObd} forceExt={forceExt} onToggleObdOverride={toggleObdOverride} onToggleExtOverride={toggleExtOverride} gpsWarning={gpsWarning} pollError={error} keyMap={keyMap} tabMap={tabMap} staticUnitMap={staticUnitMap} alertMap={alertMap} kpiMeta={kpiMeta} profileData={profileData} onSelectKpi={setSelectedKpi} onRefresh={fetchData} lastData={lastData} onReplay={() => { window.history.replaceState(null, '', '/replay'); setView('replay') }} />
 }

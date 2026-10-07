@@ -523,7 +523,21 @@ Toast is rendered at the top of `.kpi-grid-area` before the KPI cards.
 
 ## 14. Map (`MapView`)
 
-*(Structure and camera modes unchanged)*
+*(Structure unchanged; camera modes below)*
+
+### Camera modes — Track (default) and Full Route
+
+`MapView` takes two datasets: `points` (the whole-route path, thinned to ~150 points, as before) and `trackPoints` (full resolution, one entry per record, `null` where a record has no fix).
+
+| | Track (default) | Full Route |
+|---|---|---|
+| Data | Rolling window of the latest **600** frames, un-thinned, moving with the playhead (live: the 100 records of the live history) | Whole trip, thinned |
+| Drawn | A dot per data point, newest in red (exactly the current frame) | OSRM road-snapped line + dots, red last point |
+| Line | **Only while replay is paused** — never in live | Always |
+| Camera | Opens at zoom 12 (~25 km across), then pans to the newest point and leaves the user's zoom alone | `fitBounds` of all points |
+| OSRM | Not called | Called (debounced 30 s) |
+
+Track dots are keyed by their record index (`trackOffset + i`), so as the window slides only its two ends change.
 
 ### GPS source badge
 
@@ -564,6 +578,66 @@ if (!forceObd) {
 
 Same as live view: `Satellite` toggle for OBD override (shares localStorage).
 
+### Replay header (stat groups)
+
+Always fully rendered (a dash until known) so it never changes height while playing. Groups: **Trip** (start/end date and time, duration, records), **Playhead** (frame, time, elapsed wall-clock), **Progress**, then the static info block.
+
+| Progress stat | Meaning |
+|---|---|
+| Day | "2 of 3". A new day starts after a break of **4 h or more that also crosses local midnight** (`tripDays.js`) |
+| Trip Time | Driving time so far across all days. Gaps of 4 h+ are left out, so day 2 continues from day 1's total; shorter pauses still count |
+| Last Break | Length of the most recent pause of **30 min or more** (the UI's short-break threshold) |
+| Distance | Running total of speed × time (OBD `kd`, falling back to ext GPS speed); gaps over 60 s add nothing |
+| Progress | Trip Time so far ÷ total trip time |
+
+Frame→time comes from `GET /api/obd2/timeline` (every receive time of the trip), so these work even while a far seek is still buffering.
+
+### Saved trips and shareable links
+
+- A **saved trip** is a hand-defined range kept in the `savedtrips` collection (created with `node scripts/saved-trips.js`, interactive; the same tool lists and removes saved trips and regenerates the analytics of one trip or all of them). It claims every OBD record inside its range; `/api/trips` lists it by name **whatever the date filter**, with start/end snapped to the actual first/last record inside the range. Records either side of it are grouped separately by the 24 h gap rule.
+- Every trip has a link: saved → `/replay?trip=<id>`, any other → `/replay?start=<iso>&end=<iso>` (positional `tripId`s renumber, so they never go in a link). Clicking a chip, or loading a custom range, moves the address bar to its link; **Share** copies it (native share sheet on touch devices).
+- Landing on a link opens that replay directly and sets the trip list's date range to **the linked trip's start day through today**. A saved id that no longer exists shows a message instead.
+- Custom-range inputs are converted to ISO in the browser's timezone before use, so a range (and its link) means the same moment for everyone.
+
+### Replay streaming and buffering
+
+`useReplayStream` drives the playhead; the loading is `replayLoader.js` (plain JS, fetch injected, unit-tested) and its planning is `replayBuffer.js`.
+
+- **Rolling lookahead.** Keeps about **20 s of playback** loaded ahead of the playhead at the selected speed: 100 frames at 1–2× (the floor), 167 at 5×, 334 at 10×, 667 at 20×. It tops itself up after every response and every playhead/speed change, so a buffer never has to run out before the next one is requested.
+- **OBD records:** 250-record pages, up to 3 requests in flight, released to the player strictly in order (no holes). **Ext GPS:** 500-doc pages, loaded until they cover the time of the record at the end of the lookahead.
+- **Playback only advances when the next record AND ext GPS up to its time are loaded.** (It used to advance on OBD alone; the map had no GPS for those frames, then every dot arrived at once and the marker jumped.)
+- **Starting, seeking, or changing speed while playing** holds playback until a fresh lookahead for the new position/speed is in, then resumes by itself. Slowing down never waits (the buffer is already bigger than needed).
+- A far seek loads every page up to the target, in parallel (the buffer is always contiguous from frame 0: Full Route and the distance KPI read it from the start). Failed pages are retried after 1.5 s; ext GPS gives up after 3 failures in a row and stops gating playback.
+- `GET /api/obd2/history/paged` and `ext-history/paged` are unchanged (limit caps at 500).
+
+### Collapsible trip picker
+
+The picker folds to a one-line bar (the selected trip's name, or its dates) that toggles it. **Pressing Play folds it away.** On a phone, Play also scrolls the page so the **map's centre sits half way (50%) down the screen** (the trip stats above it stay partly in view, the headline KPIs and the first KPI cards show below it); the scroll waits for the KPI section to exist (it is empty until the first record with sensor values, and the page is clamped to its height). On phones the playback bar is `position: sticky`, so Pause stays in reach.
+
+### Trip Summary and trip analytics
+
+Saved trips carry an **analytics** object (`savedtrips.analytics`, with `analyticsVersion` and `analyticsComputedAt`). The replay header's **Trip Summary** button (saved trips only, before Share) opens a tabbed modal over it: **Overview** (hero distance + highlight cards + day by day), **Plan this trip**, **Charts**, **Route**, **Timeline**, **Engine & fuel**. Full-screen on phones, a large dialog on desktop.
+
+**When it is computed** (always in the background, never on the ingest path): by `scripts/saved-trips.js` right after a trip is saved (awaited there, since that process is about to exit); by a sweep at server start for any saved trip whose `analyticsVersion` is missing or older; and lazily when `GET /api/trips/saved/:id/analytics` finds none (answers 202, the modal polls every 3 s). A trip being computed is never started twice.
+
+**What is in it** (`persistence/analytics/`, one pure `computeTripAnalytics({ records, extDocs, thresholds })`):
+
+| Section | Contents |
+|---|---|
+| `summary` | distance (speed × time), `drivingMs` (time at the wheel) vs `tripTimeMs` (long breaks removed) vs span, moving/idle/night/highway/crawl time, **expressway** sections (km, share, average pace, own km/L, longest), stops, top speed, longest non-stop stretch, breaks, `days[]`, fuel (litres from fuel flow, km/L, net tank drop, fill-ups, tank size, CO₂), elevation (smoothed, with hysteresis), smoothness score and harshest events, straight line vs driven |
+| `highlights[]` | the "wow" cards: `{ id, label, value, unit, detail?, t?, tone? }` |
+| `engine` | coolant (time over amber/red), oil, load, throttle, rpm and rpm bands, battery voltage, intake/ambient, warm-up |
+| `charts` | series of `[tripTimeMs, value]` thinned to 240 points (speed, rpm, coolant, fuel level, load, altitude, distance), `segments` (map trip time back to wall time), `dayMarks`, speed bands, economy by speed, hour of day, daily |
+| `route` | ≤400 points `[lat, lon, km/h, km]`, bounds, start/end, stops of 15 min+ |
+| `timeline[]` | typed events in time order (start, breaks, fill-ups, day starts, top speed, hardest brake/accel, longest stretch, peak coolant, 100 km milestones, end) |
+| `plan` | day splits for 6/8/10 h daily driving caps, break cadence, fuel plan (range, fill-up interval), 20 route segments by pace, slowest sections, stops, fastest/slowest hours, rule-based tips |
+
+Charts use **trip time** on x (driving clock, gaps of 4 h+ removed) so a multi-day trip is one continuous line; pointing at one shows the wall-clock time via `segments`.
+
+Assumptions baked into the numbers (constants in `persistence/analytics/constants.js`): **highway driving is 55 km/h or more** (India's highways average about that), shown as a share of the **distance** driven, not of moving time, and an **expressway** is a stretch whose time-weighted average speed over a 5-minute window is **85 km/h or more** (a consistent 100–120 km/h cruise clears it; a short burst or fast-slow-fast traffic that averages less does not; patches under 5 km are ignored); local time for night driving, hour-of-day and day boundaries is **IST** (fixed offset, so results don't depend on the server's timezone); CO₂ uses the **petrol** factor (2.31 kg/L); tank size is fitted from the biggest refuel-free drop in the gauge; a fill-up is a sustained gauge rise of 8+ points from the lowest level since the last one. Checked against two real trips (a 45 L tank came out at 45 L on both).
+
+**Bump `ANALYTICS_VERSION`** (`persistence/analytics/index.js`) whenever the shape or the meaning of any number changes: stored analytics from an older version are recomputed at the next server start. The blob is never in `/api/trips` lists (they carry only `analyticsReady`).
+
 ---
 
 ## 16. PWA Configuration
@@ -593,6 +667,17 @@ Returns: `{ records, total, offset, limit }` — `obdReceivedAt` ascending.
 ### `GET /api/trips`
 Params: `start`, `end` (ISO, defaults: last 7 days)
 Returns: `Trip[]` — newest first. 24-hour gap in OBD pings = new trip (shorter silences are short/long breaks inside one trip).
+**Saved trips are always included**, whatever `start`/`end` say, with `savedTripId`, `name`, `description`, `tags`; only the remaining records inside the window are grouped automatically.
+
+### `GET /api/trips/saved/:id`
+One saved trip in the same shape (404 if unknown, deleted, or it has no records) — lets a shared link resolve without knowing the list's date range.
+
+### `GET /api/trips/saved/:id/analytics`
+Returns `{ status: 'ready', analytics }` (200), or `{ status: 'pending' }` (202) while the server computes them in the background (poll), or 404 for an unknown or deleted trip. `analytics.unavailable` is set when the trip has too little data.
+
+### `GET /api/obd2/timeline`
+Params: `start`, `end` (ISO, both required).
+Returns: `number[]` — receive time (epoch ms) of every OBD record in the window, ascending. Frame `i` of a replay over the same range is element `i`.
 
 ### `GET /api/keys`
 Returns full `data.json`.
@@ -714,3 +799,11 @@ Hooks
 18. **Ext GPS `spd` is m/s.** Multiply by 3.6 for km/h comparison and for the KPI Hero "Speed (GPS)" gauge. Display raw in Ext tab.
 19. **`displayedSource` is not the same as `activeSource`.** `activeSource` is the evaluator/toggle decision; `displayedSource` accounts for data availability and may fall back to OBD even when ext is preferred.
 20. **Heading uses ext `dir` only when `displayedSource === 'ext'`.** Computed after `displayedSource` — order of hook declarations matters.
+21. **Toolbars wrap; they never overflow.** Header, trip selector, replay stats and playback controls must fit the viewport at 360 px wide. Under 768 px the trip selector stacks (mode, dates, chips) and the page grows with its content (`min-height`, not a fixed `100vh`). Verify at 360 / 390 / 768 / 1024 / 1366 px: `document.documentElement.scrollWidth` must equal `clientWidth`.
+22. **A saved trip's range is the claim, its snapped start/end is the display.** Saved ranges must not overlap (the CLI refuses); records inside one are never auto-grouped.
+23. **Live numbers never live in the info block.** Day, Trip Time, Last Break, Distance and Progress are stats; `TripInfo` stays static so the header can't jump.
+24. **Track mode draws no line while points stream.** Line only when paused (replay) and never live; Full Route keeps its thinning.
+25. **Analytics are computed off the request path and versioned.** Never compute them while ingesting or listing trips; bump `ANALYTICS_VERSION` when their shape or meaning changes.
+26. **The analytics blob stays out of lists.** `/api/trips` carries `analyticsReady` only; the blob has its own endpoint.
+27. **Playback never outruns the map's data.** A frame is only shown once its OBD record and the ext GPS covering its time are loaded; the lookahead scales with speed (about 20 s of playback). Don't advance the playhead on OBD alone.
+28. **The replay buffer has no holes.** Pages are released to the player only in order; seeks load every page up to the target.
