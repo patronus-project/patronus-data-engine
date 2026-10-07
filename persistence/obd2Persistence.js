@@ -4,7 +4,9 @@ const ObdWithExtGps = require('./models/obdWithExtGps');
 const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
-const TRIP_GAP_MS = 3 * 60 * 60 * 1000;
+// No OBD data for 24 h ends a trip. Shorter silences are breaks inside it: the UI calls 30 min–4 h a short break
+// and 4 h–3 days a long break / overnight stop (getTelemetryStatus in frontend/src/components/utils.js).
+const TRIP_GAP_MS = 24 * 60 * 60 * 1000;
 
 function toDocument(query) {
     const payload = query || {};
