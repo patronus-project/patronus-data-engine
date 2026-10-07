@@ -40,3 +40,12 @@ TYPE GUIDE:
 **Notes:** Read path only (detectTrips, derived per request, nothing stored), so no ingest or write logic is touched. Affects the web trip chips and the mobile Drives screen alike, and trip counts/boundaries change for existing data. Needs a deploy before the mobile app sees it.
 **Migration:** none (trips are computed, not persisted; positional tripIds renumber)
 ---
+
+### 2026-10-07T00:00:00Z
+**Prompt Summary:** Replay page and home header were unusable on phones (and cramped on narrow desktops): toolbar controls and trip chips sat past the visible edge.
+**Type:** bugfix
+**Risk:** low
+**Files:** frontend/src/App.css, docs/03-frontend-design-and-logic.md
+**Notes:** CSS only, no JSX. Measured with headless Edge against the live API: home header was 520px in a 390px viewport, replay trip chips started at x=583, speed buttons clipped. Toolbars now wrap, trip selector stacks under 768px, page grows with content on phones. Verified no horizontal overflow at 360/390/768/1024/1366. Could not reproduce a desktop-specific break at 1366x768; narrow-desktop and short-window rules added defensively.
+**Migration:** none
+---
