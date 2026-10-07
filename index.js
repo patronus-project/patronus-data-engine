@@ -12,7 +12,7 @@ var keymapper =  require('./data.json');
 port = process.env.PORT;
 // sslport = process.env.SSLPORT || 3443;
 const wsocketserver= require('./websocketserver');
-const { persistObd2Query, findObd2Events, findObd2EventsPaged, findTrips, findExtEvents, findExtEventsPaged } = require('./persistence/obd2Persistence');
+const { persistObd2Query, findObd2Events, findObd2EventsPaged, findTrips, findSavedTripById, findObdTimeline, findExtEvents, findExtEventsPaged } = require('./persistence/obd2Persistence');
 console.log(`listening on port ${port}`);
 
 var server = http.createServer(app).listen(port);
@@ -78,6 +78,29 @@ function allowAll(req, res, next) {
             const resolvedStart = start || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
             findTrips({ start: resolvedStart, end: resolvedEnd })
                 .then(function (trips) { res.status(200).json(trips); })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    // One hand-saved trip, so a shared replay link resolves without knowing the list's date range
+    app.route('/api/trips/saved/:id')
+        .get(function (req, res) {
+            findSavedTripById(req.params.id)
+                .then(function (trip) {
+                    if (!trip) return res.status(404).json({ error: 'Saved trip not found' });
+                    res.status(200).json(trip);
+                })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
+    // Receive times (epoch ms) of every OBD record in a window — used to find the days of a multi-day trip
+    app.route('/api/obd2/timeline')
+        .get(function (req, res) {
+            const { start, end } = req.query;
+            if (!start || !end || isNaN(new Date(start)) || isNaN(new Date(end))) {
+                return res.status(400).json({ error: 'start and end (ISO) are required' });
+            }
+            findObdTimeline({ start, end })
+                .then(function (times) { res.status(200).json(times); })
                 .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
 
