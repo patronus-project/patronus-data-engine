@@ -1,163 +1,144 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { BASE_INTERVAL_MS, framesWanted, bufferReady, extCovers } from './replayBuffer'
+import { createReplayLoader } from './replayLoader'
 
-const PAGE_SIZE = 100
-const BASE_INTERVAL_MS = 600
-const PREFETCH_THRESHOLD = 25 // fetch next page when ≤25 records remain in buffer
-const SEEK_DEBOUNCE_MS = 200 // debounce seek-triggered prefetch
+const readJson = (res) => {
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
 
+// Streams a replay's data and drives its playhead.
+//
+// The loading is done by replayLoader: OBD records and ext GPS, kept loaded about 20 s of playback ahead of the playhead at
+// the selected speed (100 frames at 1-2×, 334 at 10×, 667 at 20×) and topped up continuously, not when a buffer runs out.
+// Here: playback only advances when the next record AND ext GPS up to its time are loaded, so the map can never lag the
+// numbers; and starting, seeking or changing speed while playing holds until a fresh lookahead is in, then carries on.
 export function useReplayStream(source) {
   const [records, setRecords] = useState([])
   const [total, setTotal] = useState(0)
   const [frame, setFrame] = useState(0)
-  const [playing, setPlaying] = useState(false)
-  const [speed, setSpeed] = useState(1)
-  const [buffering, setBuffering] = useState(false)
+  const [wantPlay, setWantPlay] = useState(false)
+  const [speed, setSpeedState] = useState(1)
+  const [waitFor, setWaitFor] = useState(null)             // { frames }: the buffer playback must have before (re)starting
+  const [extMap, setExtMap] = useState(() => new Map())    // sync_ts → joined ext GPS doc
+  const [ext, setExt] = useState({ done: false, coveredMs: 0 })
 
-  const isFetching = useRef(false)
-  const nextOffset = useRef(0)
-  const seekDebounceId = useRef(null)
+  const [loader] = useState(() => createReplayLoader({
+    fetchJson: (url) => fetch(url).then(readJson),
+    onTotal: setTotal,
+    onRecords: (chunk) => setRecords((prev) => prev.concat(chunk)),
+    onExt: (state, docs) => {
+      if (docs.length > 0) {
+        setExtMap((prev) => {
+          const next = new Map(prev)
+          docs.forEach((doc) => next.set(doc.sync_ts, doc))
+          return next
+        })
+      }
+      setExt(state)
+    },
+  }))
+
+  // The latest playhead, for callbacks and timers that must not go stale
+  const frameRef = useRef(0)
+  const speedRef = useRef(1)
+  const wantPlayRef = useRef(false)
 
   // sourceKey is a stable string — only changes when the actual time range changes
   const sourceKey = source ? `${source.start}|${source.end}` : ''
 
-  const fetchPage = useCallback((src, offset) => {
-    if (isFetching.current) return
-    isFetching.current = true
-    setBuffering(true)
-    const params = new URLSearchParams({
-      start: src.start,
-      end: src.end,
-      offset,
-      limit: PAGE_SIZE,
-    })
-    fetch(`/api/obd2/history/paged?${params}`)
-      .then(r => r.json())
-      .then(data => {
-        setTotal(data.total)
-        setRecords(prev => offset === 0 ? data.records : [...prev, ...data.records])
-        nextOffset.current = offset + data.records.length
-      })
-      .catch(() => {})
-      .finally(() => {
-        isFetching.current = false
-        setBuffering(false)
-      })
-  }, [])
-
-  // Prefetch pages needed for seek target (debounced)
-  const prefetchForSeek = useCallback((targetFrame) => {
-    if (!source || isFetching.current || total === 0) return
-    
-    // Calculate which page(s) are needed
-    const targetPageStart = Math.floor(targetFrame / PAGE_SIZE) * PAGE_SIZE
-    
-    // If target page is already loaded, do nothing
-    if (targetPageStart < records.length) return
-    
-    // Otherwise, fetch the page containing targetFrame
-    const offset = targetPageStart
-    if (offset < total) {
-      fetchPage(source, offset)
-    }
-  }, [source, records.length, total, fetchPage])
-
-  // Debounced seek prefetch
-  const schedulePrefetchForSeek = useCallback((targetFrame) => {
-    if (seekDebounceId.current !== null) {
-      clearTimeout(seekDebounceId.current)
-    }
-    seekDebounceId.current = setTimeout(() => {
-      prefetchForSeek(targetFrame)
-      seekDebounceId.current = null
-    }, SEEK_DEBOUNCE_MS)
-  }, [prefetchForSeek])
-
-  // Reset + load first page when source changes
   useEffect(() => {
+    frameRef.current = frame
+    speedRef.current = speed
+    wantPlayRef.current = wantPlay
+  }, [frame, speed, wantPlay])
+
+  // Reset and start loading when the source changes (declared before the playhead effect, which then reads frame 0)
+  useEffect(() => {
+    frameRef.current = 0
     setRecords([])
     setTotal(0)
     setFrame(0)
-    setPlaying(false)
-    nextOffset.current = 0
-    isFetching.current = false
-    if (seekDebounceId.current !== null) {
-      clearTimeout(seekDebounceId.current)
-      seekDebounceId.current = null
-    }
-    if (source) fetchPage(source, 0)
+    setWantPlay(false)
+    setWaitFor(null)
+    setExtMap(new Map())
+    setExt({ done: false, coveredMs: 0 })
+    loader.reset(source)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceKey])
+  }, [sourceKey, loader])
 
-  // Pre-fetch next page when approaching the end of the current buffer
+  // The rolling buffer: whenever the playhead or the speed changes, the loader tops its lookahead back up
   useEffect(() => {
-    if (!source || isFetching.current) return
-    if (total > 0 && nextOffset.current >= total) return
-    if (records.length > 0 && records.length - frame <= PREFETCH_THRESHOLD) {
-      fetchPage(source, nextOffset.current)
-    }
-  }, [frame, records.length, total, source, fetchPage])
+    loader.setPlayhead(frameRef.current, speed)
+  }, [frame, speed, loader])
 
-  // Play timer — advances frame; frame can exceed buffer during playback
+  const ready = bufferReady({ waitFor, loaded: records.length, total, records, ext })
+  const running = wantPlay && ready
+
   useEffect(() => {
-    if (!playing || records.length === 0) return
+    if (!running) return undefined
     const id = setInterval(() => {
-      setFrame(f => {
-        const next = f + 1
-        // Trigger prefetch if approaching end of buffer
-        if (next >= records.length - PREFETCH_THRESHOLD && !isFetching.current && nextOffset.current < total) {
-          // Prefetch will happen in the other useEffect
-        }
-        // Allow frame to go beyond records temporarily; will stall visually if buffer hasn't arrived
-        if (next >= records.length) return f
-        return next
-      })
+      const next = frameRef.current + 1
+      const end = loader.total()
+      if (end !== null && next >= end) {
+        setWantPlay(false)                                    // reached the end
+        return
+      }
+      if (!loader.recordAt(next) || !loader.extCoversRecord(next)) return   // not here yet: hold this frame
+      frameRef.current = next
+      setFrame(next)
     }, BASE_INTERVAL_MS / speed)
     return () => clearInterval(id)
-  }, [playing, speed, records.length, total])
-
-  // Auto-stop when fully played through all fetched records
-  useEffect(() => {
-    if (playing && total > 0 && frame >= records.length - 1 && nextOffset.current >= total) {
-      setPlaying(false)
-    }
-  }, [frame, playing, records.length, total])
-
-  // Cleanup debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (seekDebounceId.current !== null) {
-        clearTimeout(seekDebounceId.current)
-      }
-    }
-  }, [])
+  }, [running, speed, loader])
 
   const play = useCallback(() => {
-    if (records.length === 0) return
-    setPlaying(true)
-  }, [records.length])
+    if (loader.loadedCount() === 0) return
+    let from = frameRef.current
+    const end = loader.total()
+    if (end !== null && from >= end - 1) {                    // at the end: Play restarts
+      from = 0
+      frameRef.current = 0
+      setFrame(0)
+    }
+    setWaitFor({ frames: framesWanted(from, speedRef.current, end) })
+    setWantPlay(true)
+  }, [loader])
 
-  const pause = useCallback(() => setPlaying(false), [])
+  const pause = useCallback(() => setWantPlay(false), [])
 
   const seek = useCallback((i) => {
-    // Allow seeking up to total - 1, not just records.length - 1
-    const maxFrame = total > 0 ? total - 1 : records.length - 1
-    const targetFrame = Math.max(0, Math.min(i, maxFrame))
-    setFrame(targetFrame)
-    
-    // If seek is beyond current buffer, trigger prefetch for that page
-    if (targetFrame >= records.length) {
-      schedulePrefetchForSeek(targetFrame)
-    }
-  }, [records.length, total, schedulePrefetchForSeek])
+    const end = loader.total()
+    const last = end !== null ? end - 1 : loader.loadedCount() - 1
+    const target = Math.max(0, Math.min(i, last))
+    frameRef.current = target
+    setFrame(target)
+    // Playing: hold until the lookahead around the new position is loaded. Paused: the loader just fetches it.
+    if (wantPlayRef.current) setWaitFor({ frames: framesWanted(target, speedRef.current, end) })
+  }, [loader])
+
+  // Changing speed while playing pauses until a lookahead for the NEW speed is in, then resumes by itself
+  const setSpeed = useCallback((next) => {
+    speedRef.current = next
+    setSpeedState(next)
+    if (wantPlayRef.current) setWaitFor({ frames: framesWanted(frameRef.current, next, loader.total()) })
+  }, [loader])
+
+  // "Buffering": the person is waiting on data (nothing loaded yet, the playhead is past what is loaded, a fresh buffer is
+  // being built, or playback is holding for the next record / ext GPS)
+  const nextRecord = records[frame + 1]
+  const holding = wantPlay && ready && total > 0 && frame + 1 < total
+    && !(nextRecord && extCovers(ext, new Date(nextRecord.receivedAt).getTime()))
+  const buffering = !!source && (records.length === 0 || frame >= records.length || (wantPlay && !ready) || holding)
 
   return {
     records,
     total,
     frame,
-    playing,
+    playing: wantPlay,
     speed,
     buffering,
     currentRecord: records[frame] ?? null,
+    extMap,
     play,
     pause,
     seek,
