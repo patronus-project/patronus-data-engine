@@ -67,3 +67,6 @@ public/
 
 # local npm registry override — do not commit
 .npmrc
+
+# claude local state
+.claude/worktrees/
