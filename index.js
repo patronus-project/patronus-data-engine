@@ -5,6 +5,7 @@ var http = require('http');
 var bodyParser = require('body-parser');
 const { ingestExternalGps } = require('./extGpsController');
 const engineWatch = require('./engineWatch');
+const { getTripAnalytics, ensureMissingTripAnalytics } = require('./persistence/tripAnalyticsRunner');
 // var ssl = require('./security');
 app = express();
 var keymapper =  require('./data.json');
@@ -92,6 +93,17 @@ function allowAll(req, res, next) {
                 .catch(function (err) { res.status(500).json({ error: err.message }); });
         });
 
+    // A saved trip's analytics (the Trip Summary). 202 while they are being computed: the page polls.
+    app.route('/api/trips/saved/:id/analytics')
+        .get(function (req, res) {
+            getTripAnalytics(req.params.id)
+                .then(function (result) {
+                    if (!result) return res.status(404).json({ error: 'Saved trip not found' });
+                    res.status(result.status === 'ready' ? 200 : 202).json(result);
+                })
+                .catch(function (err) { res.status(500).json({ error: err.message }); });
+        });
+
     // Receive times (epoch ms) of every OBD record in a window — used to find the days of a multi-day trip
     app.route('/api/obd2/timeline')
         .get(function (req, res) {
@@ -145,7 +157,13 @@ engineWatch.start();
 
 const { connect } = require('./persistence/mongoose');
 connect()
-    .then(function () { console.log('MongoDB connected OK'); })
+    .then(function () {
+        console.log('MongoDB connected OK');
+        // Any saved trip without current analytics gets them computed, in the background; nothing waits on this
+        ensureMissingTripAnalytics()
+            .then(function (n) { if (n) console.log('trip analytics computed for', n, 'saved trip(s)'); })
+            .catch(function (err) { console.error('trip analytics sweep failed:', err.message || err); });
+    })
     .catch(function (err) {
         console.error('MongoDB connection FAILED:', err.message);
         engineWatch.recordMongoConnectFailure(err);

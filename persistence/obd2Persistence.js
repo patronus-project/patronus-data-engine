@@ -3,6 +3,7 @@ const Obd2Event = require('./models/obd2Event');
 const ObdWithExtGps = require('./models/obdWithExtGps');
 const SavedTrip = require('./models/savedTrip');
 const { groupTrips } = require('./tripGrouping');
+const { ANALYTICS_VERSION } = require('./analytics');
 const { persistObd } = require('../extGpsController');
 
 const ROOT_KEYS = new Set(['eml', 'v', 'session', 'id', 'time']);
@@ -66,9 +67,10 @@ async function findObd2Events(filters) {
     return Obd2Event.find(where).sort({ receivedAt: -1 }).limit(limit).lean().exec();
 }
 
-// Every saved (hand-defined) trip, oldest first
+// Every saved (hand-defined) trip, oldest first. The analytics blob stays out of lists; analyticsReady says it exists.
 async function findSavedTrips() {
-    return SavedTrip.find({ isDeleted: { $ne: true } }).sort({ startTime: 1 }).lean().exec();
+    const trips = await SavedTrip.find({ isDeleted: { $ne: true } }, { analytics: 0 }).sort({ startTime: 1 }).lean().exec();
+    return trips.map((t) => Object.assign({}, t, { analyticsReady: t.analyticsVersion === ANALYTICS_VERSION }));
 }
 
 // Trip summary — lightweight, only receivedAt fetched.
@@ -91,8 +93,9 @@ async function findTrips({ start, end } = {}) {
 async function findSavedTripById(id) {
     await connect();
     if (!/^[a-f0-9]{24}$/i.test(String(id))) return null;
-    const saved = await SavedTrip.findOne({ _id: id, isDeleted: { $ne: true } }).lean().exec();
-    if (!saved) return null;
+    const found = await SavedTrip.findOne({ _id: id, isDeleted: { $ne: true } }, { analytics: 0 }).lean().exec();
+    if (!found) return null;
+    const saved = Object.assign({}, found, { analyticsReady: found.analyticsVersion === ANALYTICS_VERSION });
     const records = await Obd2Event
         .find(buildDateWhere(saved.startTime, saved.endTime, 'receivedAt'), { receivedAt: 1 })
         .sort({ receivedAt: 1 })

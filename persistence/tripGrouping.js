@@ -68,7 +68,8 @@ const groupTrips = (records, savedTrips = []) => {
             savedTripId: String(s._id),
             name: s.name,
             description: s.description || '',
-            tags: s.tags || []
+            tags: s.tags || [],
+            analyticsReady: !!s.analyticsReady
         }));
 
     return [...automatic, ...saved]

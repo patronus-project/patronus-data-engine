@@ -9,7 +9,11 @@ const savedTripSchema = new mongoose.Schema({
     // Rough bounds: the trip is every OBD record whose receivedAt falls inside [startTime, endTime]
     startTime: { type: Date, required: true, index: true },
     endTime: { type: Date, required: true },
-    isDeleted: { type: Boolean, default: false }
+    isDeleted: { type: Boolean, default: false },
+    // Computed from the trip's records by tripAnalyticsRunner; analyticsVersion says which version of the maths made it
+    analytics: { type: mongoose.Schema.Types.Mixed, default: null },
+    analyticsVersion: { type: Number, default: null },
+    analyticsComputedAt: { type: Date, default: null }
 }, {
     timestamps: true,
     versionKey: false
