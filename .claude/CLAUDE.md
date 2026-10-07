@@ -39,7 +39,7 @@ Two parts in one repo: a plain-JS CommonJS Express backend (root) and a React 19
 1. `GET /api/obd2` — the Android OBD app sends telemetry as query params. The handler broadcasts it over WS (`/wsinit`), records it in `engineWatch`, and calls `persistObd2Query`. That function filters by user-agent (Android `SM-*` devices only) and requires `eml`, `session` and `id`. It writes an `Obd2Event` and calls `persistObd` in [extGpsController.js](../extGpsController.js). The HTTP response is sent without waiting for persistence.
 2. `POST /api/telemetry/gps-event` — a separate external GPS source. Fixes are upserted into the `obdWithExtGps` collection by `(sync_ts, email)`, where `sync_ts` comes from [utils/tsSync.js](../utils/tsSync.js). The OBD path writes to the same collection, so OBD and ext-GPS records are joined by timestamp bucket.
 
-**Read paths**: `/api/obd2/history[/paged]`, `/api/obd2/ext-history[/paged]` and `/api/trips`. Trips are not stored. `detectTrips` in [persistence/obd2Persistence.js](../persistence/obd2Persistence.js) derives them from `receivedAt` gaps over 24 hours (shorter silences are breaks within one trip). Paged endpoints cap `limit` at 500 and feed the replay sliding window.
+**Read paths**: `/api/obd2/history[/paged]`, `/api/obd2/ext-history[/paged]` and `/api/trips`. Automatic trips are not stored: `groupTrips` in [persistence/tripGrouping.js](../persistence/tripGrouping.js) derives them from `receivedAt` gaps over 24 hours (shorter silences are breaks within one trip). **Saved trips** (collection `savedtrips`, model [savedTrip.js](../persistence/models/savedTrip.js)) are hand-defined ranges that claim their records first and are always listed; they are created with the interactive, temporary [scripts/saved-trips.js](../scripts/saved-trips.js). `/api/trips/saved/:id` and `/api/obd2/timeline` serve shared replay links and the replay header's day/trip-time stats. Paged endpoints cap `limit` at 500 and feed the replay sliding window.
 
 **engineWatch** ([engineWatch.js](../engineWatch.js)) is an observe-only monitor. It records what the ingest handlers did, evaluates "something broke mid-drive" rules every minute, and pushes state changes to a **public** ntfy topic. It must never throw into the request path (everything goes through `safe()`), change what gets written, or send coordinates, emails, session ids or raw DB errors. `/api/health` serves liveness from process memory only, with no DB query.
 
@@ -54,7 +54,7 @@ Two parts in one repo: a plain-JS CommonJS Express backend (root) and a React 19
 ## Project rules
 
 - **Mongo ingest write logic is frozen.** Don't change the ingest writes (the bucket-overwrite issue is parked) without explicit approval.
-- **DB access only through `mongodb-mcp-server`, and ask first.** Never write throwaway scripts that read `.env` to query Mongo.
+- **DB access only through `mongodb-mcp-server`, and ask first.** Never write throwaway scripts that read `.env` to query Mongo. The one exception is `scripts/saved-trips.js`, which the user asked for and runs themselves: Claude must not run it against the real database.
 - **"One by one" or "go through the findings" means discuss.** Make no edits until the user approves each item.
 - **If behind `origin`, branch and commit, then merge `origin/master` in.** Keep manual GPS overrides.
 - **Violations caught by the user are logged** in [violation-log.md](violation-log.md), including the session stats table.

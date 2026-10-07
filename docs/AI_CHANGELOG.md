@@ -49,3 +49,21 @@ TYPE GUIDE:
 **Notes:** CSS only, no JSX. Measured with headless Edge against the live API: home header was 520px in a 390px viewport, replay trip chips started at x=583, speed buttons clipped. Toolbars now wrap, trip selector stacks under 768px, page grows with content on phones. Verified no horizontal overflow at 360/390/768/1024/1366. Could not reproduce a desktop-specific break at 1366x768; narrow-desktop and short-window rules added defensively.
 **Migration:** none
 ---
+
+### 2026-10-08T00:00:00Z
+**Prompt Summary:** Let trips be defined by hand (name, description, rough start/end), list them ahead of automatic grouping, make any trip a shareable replay link, and show saved-trip details plus day / trip time / last break / distance / progress in the replay header.
+**Type:** feature
+**Risk:** medium
+**Files:** persistence/models/savedTrip.js, persistence/tripGrouping.js, persistence/obd2Persistence.js, index.js, scripts/saved-trips.js, frontend/src/components/{shareLink,tripDays,tripProgress}.js, frontend/src/components/{TripInfo,ReplayHeader,ReplayPage,TripSelector}.jsx, frontend/src/hooks/{useTripDays,useTripProgress,useTrips}.js, frontend/src/App.jsx, frontend/src/App.css, tests
+**Notes:** New collection `savedtrips` (read path only; ingest writes untouched). Saved trips are always listed and are hard boundaries for automatic grouping; they snap to the first/last record inside the range entered. The CLI is interactive (range, record count, confirm, then name/description/tags) and its conversation is tested with scripted answers. Distance is speed x time (checked against GPS hops on three real drives, within ~3%). New endpoints: GET /api/trips/saved/:id, GET /api/obd2/timeline. Custom-range inputs are now converted to ISO in the browser zone (previously sent zone-less and read in the server's zone).
+**Migration:** none (new collection created on first save)
+---
+
+### 2026-10-08T00:30:00Z
+**Prompt Summary:** Replay map: Track mode with a rolling 600-point window synced to each data point, no line while playing, default for replay and live, not zoomed in so far.
+**Type:** feature
+**Risk:** low
+**Files:** frontend/src/components/{MapView,LandingPage,ReplayPage}.jsx, frontend/src/components/utils.js, test/trackPoints.test.js
+**Notes:** Full Route keeps its existing thinning. The old Track mode only panned, and the red marker was the last thinned point (up to ~28 frames behind the playhead late in a trip). Track dots are keyed by record index so a sliding window only touches its ends. OSRM snapping runs only in Full Route. Verified in headless Edge on the 8036-record Kolkata trip: 571 dots + 1 current at frame 800, no line while playing, line when paused, tile zoom 12.
+**Migration:** none
+---

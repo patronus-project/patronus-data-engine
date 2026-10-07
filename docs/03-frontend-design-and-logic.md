@@ -523,7 +523,21 @@ Toast is rendered at the top of `.kpi-grid-area` before the KPI cards.
 
 ## 14. Map (`MapView`)
 
-*(Structure and camera modes unchanged)*
+*(Structure unchanged; camera modes below)*
+
+### Camera modes — Track (default) and Full Route
+
+`MapView` takes two datasets: `points` (the whole-route path, thinned to ~150 points, as before) and `trackPoints` (full resolution, one entry per record, `null` where a record has no fix).
+
+| | Track (default) | Full Route |
+|---|---|---|
+| Data | Rolling window of the latest **600** frames, un-thinned, moving with the playhead (live: the 100 records of the live history) | Whole trip, thinned |
+| Drawn | A dot per data point, newest in red (exactly the current frame) | OSRM road-snapped line + dots, red last point |
+| Line | **Only while replay is paused** — never in live | Always |
+| Camera | Opens at zoom 12 (~25 km across), then pans to the newest point and leaves the user's zoom alone | `fitBounds` of all points |
+| OSRM | Not called | Called (debounced 30 s) |
+
+Track dots are keyed by their record index (`trackOffset + i`), so as the window slides only its two ends change.
 
 ### GPS source badge
 
@@ -564,6 +578,27 @@ if (!forceObd) {
 
 Same as live view: `Satellite` toggle for OBD override (shares localStorage).
 
+### Replay header (stat groups)
+
+Always fully rendered (a dash until known) so it never changes height while playing. Groups: **Trip** (start/end date and time, duration, records), **Playhead** (frame, time, elapsed wall-clock), **Progress**, then the static info block.
+
+| Progress stat | Meaning |
+|---|---|
+| Day | "2 of 3". A new day starts after a break of **4 h or more that also crosses local midnight** (`tripDays.js`) |
+| Trip Time | Driving time so far across all days. Gaps of 4 h+ are left out, so day 2 continues from day 1's total; shorter pauses still count |
+| Last Break | Length of the most recent pause of **30 min or more** (the UI's short-break threshold) |
+| Distance | Running total of speed × time (OBD `kd`, falling back to ext GPS speed); gaps over 60 s add nothing |
+| Progress | Trip Time so far ÷ total trip time |
+
+Frame→time comes from `GET /api/obd2/timeline` (every receive time of the trip), so these work even while a far seek is still buffering.
+
+### Saved trips and shareable links
+
+- A **saved trip** is a hand-defined range kept in the `savedtrips` collection (created with `node scripts/saved-trips.js`, interactive). It claims every OBD record inside its range; `/api/trips` lists it by name **whatever the date filter**, with start/end snapped to the actual first/last record inside the range. Records either side of it are grouped separately by the 24 h gap rule.
+- Every trip has a link: saved → `/replay?trip=<id>`, any other → `/replay?start=<iso>&end=<iso>` (positional `tripId`s renumber, so they never go in a link). Clicking a chip, or loading a custom range, moves the address bar to its link; **Share** copies it (native share sheet on touch devices).
+- Landing on a link opens that replay directly and sets the trip list's date range to **the linked trip's start day through today**. A saved id that no longer exists shows a message instead.
+- Custom-range inputs are converted to ISO in the browser's timezone before use, so a range (and its link) means the same moment for everyone.
+
 ---
 
 ## 16. PWA Configuration
@@ -593,6 +628,14 @@ Returns: `{ records, total, offset, limit }` — `obdReceivedAt` ascending.
 ### `GET /api/trips`
 Params: `start`, `end` (ISO, defaults: last 7 days)
 Returns: `Trip[]` — newest first. 24-hour gap in OBD pings = new trip (shorter silences are short/long breaks inside one trip).
+**Saved trips are always included**, whatever `start`/`end` say, with `savedTripId`, `name`, `description`, `tags`; only the remaining records inside the window are grouped automatically.
+
+### `GET /api/trips/saved/:id`
+One saved trip in the same shape (404 if unknown, deleted, or it has no records) — lets a shared link resolve without knowing the list's date range.
+
+### `GET /api/obd2/timeline`
+Params: `start`, `end` (ISO, both required).
+Returns: `number[]` — receive time (epoch ms) of every OBD record in the window, ascending. Frame `i` of a replay over the same range is element `i`.
 
 ### `GET /api/keys`
 Returns full `data.json`.
@@ -715,3 +758,6 @@ Hooks
 19. **`displayedSource` is not the same as `activeSource`.** `activeSource` is the evaluator/toggle decision; `displayedSource` accounts for data availability and may fall back to OBD even when ext is preferred.
 20. **Heading uses ext `dir` only when `displayedSource === 'ext'`.** Computed after `displayedSource` — order of hook declarations matters.
 21. **Toolbars wrap; they never overflow.** Header, trip selector, replay stats and playback controls must fit the viewport at 360 px wide. Under 768 px the trip selector stacks (mode, dates, chips) and the page grows with its content (`min-height`, not a fixed `100vh`). Verify at 360 / 390 / 768 / 1024 / 1366 px: `document.documentElement.scrollWidth` must equal `clientWidth`.
+22. **A saved trip's range is the claim, its snapped start/end is the display.** Saved ranges must not overlap (the CLI refuses); records inside one are never auto-grouped.
+23. **Live numbers never live in the info block.** Day, Trip Time, Last Break, Distance and Progress are stats; `TripInfo` stays static so the header can't jump.
+24. **Track mode draws no line while points stream.** Line only when paused (replay) and never live; Full Route keeps its thinning.
